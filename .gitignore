@@ -41,3 +41,6 @@ license_generator*.py
 *license_gen*.py
 *.lic
 .syslock
+PANDUAN_ADMIN_LICENSE.md
+*LICENSE_GUIDE*.md
+
