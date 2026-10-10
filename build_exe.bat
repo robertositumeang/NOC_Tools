@@ -47,20 +47,13 @@ if errorlevel 1 (
 )
 echo [OK] NOC Tools berhasil dibuild.
 
-:: Salin alias exe untuk kemudahan user
-copy /y "dist\NOC Tools.exe" "dist\NOC Dashboard.exe"       >nul
-copy /y "dist\NOC Tools.exe" "dist\NOC Massive Checker.exe" >nul
-copy /y "dist\NOC Tools.exe" "dist\MassiveSiteDown.exe"     >nul
-
 :: Update Desktop jika ada
-if exist "%USERPROFILE%\OneDrive\Desktop\MassiveSiteDown.exe" (
-    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\OneDrive\Desktop\NOC Tools.exe" >nul
-    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\OneDrive\Desktop\MassiveSiteDown.exe" >nul
+if exist "%USERPROFILE%\OneDrive\Desktop" (
+    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\OneDrive\Desktop\NOC Tools.exe" >nul 2>&1
     echo [OK] Shortcut di OneDrive Desktop diperbarui.
 )
-if exist "%USERPROFILE%\Desktop\MassiveSiteDown.exe" (
-    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\Desktop\NOC Tools.exe" >nul
-    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\Desktop\MassiveSiteDown.exe" >nul
+if exist "%USERPROFILE%\Desktop" (
+    copy /y "dist\NOC Tools.exe" "%USERPROFILE%\Desktop\NOC Tools.exe" >nul 2>&1
     echo [OK] Shortcut di Desktop diperbarui.
 )
 
@@ -68,9 +61,7 @@ echo.
 echo ============================================================
 echo  BUILD SUKSES!
 echo  Executable siap pakai di folder dist\:
-echo   - dist\NOC Tools.exe (Aplikasi lengkap: Site Down + CCTV)
-echo   - dist\NOC Dashboard.exe
-echo   - dist\NOC Massive Checker.exe
-echo   - dist\MassiveSiteDown.exe
+echo   - dist\NOC Tools.exe (Unified Single Executable)
 echo ============================================================
+
 echo.
