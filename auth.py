@@ -42,6 +42,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from license_mgr import check_active_license, LicenseActivationDialog
+
 # Application cryptographic pepper (Layer 2 HMAC secret)
 _HMAC_PEPPER: Final[bytes] = b"NOC_SECURE_AUTH_SYSTEM_v2_2026_PT_LINDU_PUTRA_UTAMA"
 
@@ -175,6 +177,12 @@ QLineEdit:focus {
     background: rgba(15, 23, 42, 0.95);
 }
 
+QLineEdit:disabled {
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    color: #64748B;
+}
+
 QPushButton#btnLogin {
     background: qlineargradient(
         x1:0, y1:0, x2:1, y2:0,
@@ -200,6 +208,34 @@ QPushButton#btnLogin:hover {
 
 QPushButton#btnLogin:pressed {
     background: #0369A1;
+}
+
+QPushButton#btnLogin:disabled {
+    background: #1E293B;
+    color: #64748B;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+QPushButton#btnActivateLic {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #E11D48, stop:1 #BE123C
+    );
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 14px;
+}
+
+QPushButton#btnActivateLic:hover {
+    background: #F43F5E;
+}
+
+QPushButton#btnActivateLic:pressed {
+    background: #9F1239;
 }
 
 QPushButton#btnForgot {
@@ -231,12 +267,12 @@ QLabel#footerBadge {
 
 
 class LoginDialog(QDialog):
-    """Secure, Anti-Slop Production-Grade Login Window."""
+    """Secure, Anti-Slop Production-Grade Login Window with Pre-Login License Gate."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("NOC Security Access Control")
-        self.setFixedSize(460, 520)
+        self.setFixedSize(480, 600)
         self.setWindowFlags(
             Qt.WindowType.Dialog
             | Qt.WindowType.CustomizeWindowHint
@@ -249,7 +285,14 @@ class LoginDialog(QDialog):
         self._failed_attempts: int = 0
         self._lockout_until: float = 0.0
 
+        # License state attributes
+        self._is_lic_valid: bool = False
+        self._lic_days_left: int = 0
+        self._lic_msg: str = ""
+        self._lic_exp_date: str = ""
+
         self._build_ui()
+        self._refresh_license_status()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -258,8 +301,8 @@ class LoginDialog(QDialog):
         card = QFrame()
         card.setObjectName("cardMain")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(32, 28, 32, 28)
-        card_layout.setSpacing(14)
+        card_layout.setContentsMargins(32, 24, 32, 24)
+        card_layout.setSpacing(11)
 
         # ── Header & Branding ──────────────────────────────────────────────
         hdr_layout = QVBoxLayout()
@@ -267,7 +310,7 @@ class LoginDialog(QDialog):
         hdr_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         icon_lbl = QLabel("🛡️")
-        icon_lbl.setStyleSheet("font-size: 34px;")
+        icon_lbl.setStyleSheet("font-size: 32px;")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hdr_layout.addWidget(icon_lbl)
 
@@ -282,7 +325,37 @@ class LoginDialog(QDialog):
         hdr_layout.addWidget(subtitle)
 
         card_layout.addLayout(hdr_layout)
-        card_layout.addSpacing(6)
+        card_layout.addSpacing(2)
+
+        # ── License Status Banner (Pre-Login License Enforcement) ─────────
+        self.lic_card = QFrame()
+        self.lic_card.setObjectName("licCard")
+        lic_card_layout = QHBoxLayout(self.lic_card)
+        lic_card_layout.setContentsMargins(14, 10, 14, 10)
+        lic_card_layout.setSpacing(10)
+
+        lic_info_layout = QVBoxLayout()
+        lic_info_layout.setSpacing(2)
+
+        self.lbl_lic_badge = QLabel("LICENSE STATUS")
+        self.lbl_lic_badge.setObjectName("licBadge")
+        lic_info_layout.addWidget(self.lbl_lic_badge)
+
+        self.lbl_lic_detail = QLabel("")
+        self.lbl_lic_detail.setObjectName("licDetail")
+        self.lbl_lic_detail.setWordWrap(True)
+        lic_info_layout.addWidget(self.lbl_lic_detail)
+
+        lic_card_layout.addLayout(lic_info_layout, stretch=1)
+
+        self.btn_activate_lic = QPushButton("🔑 Aktivasi")
+        self.btn_activate_lic.setObjectName("btnActivateLic")
+        self.btn_activate_lic.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_activate_lic.clicked.connect(self._handle_activate_license)
+        lic_card_layout.addWidget(self.btn_activate_lic)
+
+        card_layout.addWidget(self.lic_card)
+        card_layout.addSpacing(4)
 
         # ── Username Field ─────────────────────────────────────────────────
         lbl_user = QLabel("USERNAME")
@@ -339,6 +412,69 @@ class LoginDialog(QDialog):
 
         layout.addWidget(card)
 
+    def _refresh_license_status(self) -> None:
+        """Evaluate license state and lock/unlock login controls accordingly."""
+        is_valid, msg, days_left, exp_date = check_active_license()
+        self._is_lic_valid = is_valid
+        self._lic_days_left = days_left
+        self._lic_msg = msg
+        self._lic_exp_date = exp_date
+
+        if self._is_lic_valid:
+            # Active license styling
+            self.lic_card.setStyleSheet("""
+                QFrame#licCard {
+                    background: rgba(16, 185, 129, 0.10);
+                    border: 1px solid rgba(16, 185, 129, 0.35);
+                    border-radius: 10px;
+                }
+            """)
+            self.lbl_lic_badge.setText(f"🛡️ LISENSI AKTIF ({days_left} HARI TERSISA)")
+            self.lbl_lic_badge.setStyleSheet("color: #34D399; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;")
+            self.lbl_lic_detail.setText(f"Berlaku hingga {exp_date}. Akses sistem diizinkan.")
+            self.lbl_lic_detail.setStyleSheet("color: #A7F3D0; font-size: 10px;")
+            self.btn_activate_lic.setVisible(False)
+
+            # ENABLE Form Inputs
+            self.txt_username.setEnabled(True)
+            self.txt_password.setEnabled(True)
+            self.btn_login.setEnabled(True)
+            self.txt_username.setPlaceholderText("Masukkan username operasional...")
+            self.txt_password.setPlaceholderText("Masukkan kata sandi...")
+            self.btn_login.setText("MASUK KE SISTEM  ➔")
+            self.lbl_status.setVisible(False)
+        else:
+            # EXPIRED / UNLICENSED styling (Cek Lisensi DULU -> MUNCUL namun DISABLE)
+            self.lic_card.setStyleSheet("""
+                QFrame#licCard {
+                    background: rgba(225, 29, 72, 0.12);
+                    border: 1px solid rgba(244, 63, 94, 0.50);
+                    border-radius: 10px;
+                }
+            """)
+            self.lbl_lic_badge.setText("⚠️ LICENSE EXPIRED")
+            self.lbl_lic_badge.setStyleSheet("color: #FB7185; font-size: 12px; font-weight: 800; letter-spacing: 0.8px;")
+            detail_msg = msg if msg else "Masa aktif lisensi telah kedaluwarsa atau belum terpasang."
+            self.lbl_lic_detail.setText(detail_msg)
+            self.lbl_lic_detail.setStyleSheet("color: #FDA4AF; font-size: 10px;")
+            self.btn_activate_lic.setVisible(True)
+
+            # DISABLE Form Inputs
+            self.txt_username.setEnabled(False)
+            self.txt_password.setEnabled(False)
+            self.btn_login.setEnabled(False)
+            self.txt_username.setPlaceholderText("Form dikunci (Lisensi kedaluwarsa)")
+            self.txt_password.setPlaceholderText("Form dikunci (Lisensi kedaluwarsa)")
+            self.btn_login.setText("SISTEM TERKUNCI (LISENSI EXPIRED)")
+
+    def _handle_activate_license(self) -> None:
+        """Launch activation modal and reactivate login form on success."""
+        dlg = LicenseActivationDialog(self, initial_msg=self._lic_msg)
+        if dlg.exec() == QDialog.DialogCode.Accepted or dlg.is_activated:
+            self._refresh_license_status()
+            if self._is_lic_valid:
+                self.txt_username.setFocus()
+
     def _focus_password(self) -> None:
         self.txt_password.setFocus()
 
@@ -357,6 +493,10 @@ class LoginDialog(QDialog):
         msg.exec()
 
     def _handle_login(self) -> None:
+        if not self._is_lic_valid:
+            self._show_error("Lisensi tidak aktif atau kedaluwarsa. Silakan aktivasi dahulu.")
+            return
+
         now = time.time()
         if now < self._lockout_until:
             sisa = int(self._lockout_until - now)

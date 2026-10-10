@@ -96,3 +96,39 @@ def test_no_plaintext_passwords_in_source():
     assert "ButuhAksesLogin#2026" not in source_code
     assert "JanganKasihTau@2026" not in source_code
 
+
+def test_login_dialog_license_expired_locks_form(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+    from auth import LoginDialog
+
+    _ = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "auth.check_active_license",
+        lambda: (False, "Lisensi telah kedaluwarsa pada 2026-03-01", 0, "2026-03-01")
+    )
+    dialog = LoginDialog()
+    assert dialog._is_lic_valid is False
+    assert "LICENSE EXPIRED" in dialog.lbl_lic_badge.text()
+    assert dialog.txt_username.isEnabled() is False
+    assert dialog.txt_password.isEnabled() is False
+    assert dialog.btn_login.isEnabled() is False
+    assert not dialog.btn_activate_lic.isHidden()
+
+
+def test_login_dialog_license_active_unlocks_form(monkeypatch):
+    from PyQt6.QtWidgets import QApplication
+    from auth import LoginDialog
+
+    _ = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "auth.check_active_license",
+        lambda: (True, "Lisensi Aktif", 30, "2026-11-10")
+    )
+    dialog = LoginDialog()
+    assert dialog._is_lic_valid is True
+    assert "LISENSI AKTIF" in dialog.lbl_lic_badge.text()
+    assert dialog.txt_username.isEnabled() is True
+    assert dialog.txt_password.isEnabled() is True
+    assert dialog.btn_login.isEnabled() is True
+    assert dialog.btn_activate_lic.isHidden()
+
