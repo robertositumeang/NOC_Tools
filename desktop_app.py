@@ -95,6 +95,7 @@ from updater import (
     configure_github_repo_dialog,
     get_github_repo,
 )
+from auth import LoginDialog, make_session_token, verify_session_token
 
 
 DEFAULT_MASTER_FILENAME = "Site Management -  20260927_160847.xlsx"
@@ -1435,8 +1436,9 @@ class AnalysisWorker(QThread):
 
 
 class MassiveSiteDownApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, operator_name: str = ""):
         super().__init__()
+        self.operator_name = operator_name
         apply_standard_window_chrome(self)
         self._close_pending = False
         self.setWindowTitle("NOC Tools | Massive Checker")
@@ -1895,6 +1897,11 @@ class MassiveSiteDownApp(QMainWindow):
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setObjectName("brandVersion")
         ft_layout.addWidget(version_label)
+        if getattr(self, "operator_name", ""):
+            op_label = QLabel(f"👤 {self.operator_name}")
+            op_label.setObjectName("brandVersion")
+            op_label.setStyleSheet("color: #38BDF8; font-weight: bold;")
+            ft_layout.addWidget(op_label)
         company_label = QLabel("PT. KEREAKTIF INDONESIA")
         company_label.setObjectName("brandVersion")
         ft_layout.addWidget(company_label)
@@ -2862,8 +2869,9 @@ class MassiveSiteDownApp(QMainWindow):
 
 
 class AppSelectionDialog(QDialog):
-    def __init__(self) -> None:
+    def __init__(self, auth_user: str = "") -> None:
         super().__init__()
+        self.auth_user = auth_user
         self.setWindowTitle(f"{APP_NAME} | Select an application")
         self.resize(620, 500)
         self.selection: str | None = None
@@ -2888,7 +2896,10 @@ class AppSelectionDialog(QDialog):
         title = QLabel(APP_NAME)
         title.setObjectName("brandTitle")
         brand_text.addWidget(title)
-        subtitle = QLabel("Operations workspace")
+        sub_text = "Operations workspace"
+        if self.auth_user:
+            sub_text += f"  ·  Operator: {self.auth_user}"
+        subtitle = QLabel(sub_text)
         subtitle.setObjectName("brandSubtitle")
         brand_text.addWidget(subtitle)
         brand_row.addLayout(brand_text, 1)
@@ -3104,12 +3115,15 @@ def _relaunch_with_scale(
     resolution: str,
     theme_name: str,
     system_dpi: int,
+    auth_user: str = "",
 ) -> None:
     environment = os.environ.copy()
     environment["QT_SCALE_FACTOR"] = f"{_qt_scale_factor(scale_percent, system_dpi):.6f}"
     environment["NOC_TOOLS_RESOLUTION"] = resolution
     environment["NOC_TOOLS_THEME"] = theme_name
     environment["NOC_TOOLS_LAUNCH_APP"] = selection
+    if auth_user:
+        environment["NOC_TOOLS_SESSION_TOKEN"] = make_session_token(auth_user)
 
     if getattr(sys, "frozen", False):
         command = [sys.executable]
@@ -3129,7 +3143,9 @@ def main() -> int:
         f"{_qt_scale_factor(starting_scale, system_dpi):.6f}"
     )
 
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     theme_name = os.environ.pop("NOC_TOOLS_THEME", "")
     if not theme_name:
@@ -3141,13 +3157,32 @@ def main() -> int:
     set_application_theme(theme_name, app)
     app.setQuitOnLastWindowClosed(False)
 
+    # ── Authenticate User (Access Control Gate) ──
+    authenticated_user = ""
+    session_token = os.environ.pop("NOC_TOOLS_SESSION_TOKEN", "")
+    if session_token:
+        valid_session, session_user = verify_session_token(session_token)
+        if valid_session:
+            authenticated_user = session_user
+
+    if not authenticated_user:
+        # Close any startup splash so the login dialog is prominently focused
+        for widget in app.topLevelWidgets():
+            if type(widget).__name__ == "StartupSplash":
+                widget.close()
+
+        login_dialog = LoginDialog()
+        if login_dialog.exec() != QDialog.DialogCode.Accepted:
+            return 0
+        authenticated_user = login_dialog.authenticated_user
+
     def launch_selected_app(
         selection: str,
         resolution: str,
         scale_percent: int,
     ) -> bool:
         if selection == "massive":
-            window = MassiveSiteDownApp()
+            window = MassiveSiteDownApp(operator_name=authenticated_user)
         elif selection == "cctv":
             window = CCTVReportMainWindow()
         else:
@@ -3161,7 +3196,7 @@ def main() -> int:
 
     def show_launcher() -> bool:
         while True:
-            selection_dialog = AppSelectionDialog()
+            selection_dialog = AppSelectionDialog(auth_user=authenticated_user)
             if selection_dialog.exec() != QDialog.DialogCode.Accepted:
                 return False
 
@@ -3182,6 +3217,7 @@ def main() -> int:
                         resolution,
                         selected_theme,
                         system_dpi,
+                        auth_user=authenticated_user,
                     )
                 except OSError as error:
                     QMessageBox.critical(
