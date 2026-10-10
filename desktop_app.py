@@ -96,6 +96,7 @@ from updater import (
     get_github_repo,
 )
 from auth import LoginDialog, make_session_token, verify_session_token
+from license_mgr import LicenseActivationDialog, check_active_license
 from PIL import Image, ImageOps, ImageStat
 
 
@@ -2900,6 +2901,9 @@ class AppSelectionDialog(QDialog):
         sub_text = "Operations workspace"
         if self.auth_user:
             sub_text += f"  ·  Operator: {self.auth_user}"
+        is_lic, _, days_left, _ = check_active_license()
+        if is_lic:
+            sub_text += f"  ·  Lisensi: {days_left} hari"
         subtitle = QLabel(sub_text)
         subtitle.setObjectName("brandSubtitle")
         brand_text.addWidget(subtitle)
@@ -3007,6 +3011,16 @@ class AppSelectionDialog(QDialog):
         self.btn_update.clicked.connect(self._manual_check_update)
         footer.addWidget(self.btn_update)
 
+        self.btn_license = QPushButton("🔑 Lisensi")
+        self.btn_license.setObjectName("brandVersion")
+        self.btn_license.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_license.setStyleSheet(
+            "QPushButton { border: 1px solid palette(mid); border-radius: 4px; padding: 2px 8px; font-size: 11px; }"
+            "QPushButton:hover { background-color: rgba(56, 189, 248, 0.15); border-color: #38BDF8; }"
+        )
+        self.btn_license.clicked.connect(self._show_license_dialog)
+        footer.addWidget(self.btn_license)
+
         footer_version = QLabel(f"Version {APP_VERSION}")
         footer_version.setObjectName("brandVersion")
         footer.addWidget(footer_version)
@@ -3033,6 +3047,10 @@ class AppSelectionDialog(QDialog):
     def _select(self, selection: str) -> None:
         self.selection = selection
         self.accept()
+
+    def _show_license_dialog(self) -> None:
+        dialog = LicenseActivationDialog(self)
+        dialog.exec()
 
     def _start_background_update_check(self) -> None:
         """Silently checks for updates in the background on startup."""
@@ -3176,6 +3194,13 @@ def main() -> int:
         if login_dialog.exec() != QDialog.DialogCode.Accepted:
             return 0
         authenticated_user = login_dialog.authenticated_user
+
+    # ── Verify License Gate (Machine-Bound 1-Year License) ──
+    is_lic_valid, lic_msg, days_left, exp_date = check_active_license()
+    if not is_lic_valid:
+        lic_dialog = LicenseActivationDialog(initial_msg=lic_msg)
+        if lic_dialog.exec() != QDialog.DialogCode.Accepted:
+            return 0
 
     def launch_selected_app(
         selection: str,

@@ -29,6 +29,15 @@ Desktop.ini
 $RECYCLE.BIN/
 *.tmp
 
-Contoh_alarm_fiberhome/Alarm Query Result.zip
+# Data & Excel
 *.xlsx
-95 SITES VSAT DOWN PAKET 10 AREA 5 - MALUKU UNDER JCSAT-1C 20260927.xlsx
+*.xlsm
+Contoh_alarm_fiberhome/Alarm Query Result.zip
+
+# Security & Administrator Tools (DO NOT COMMIT)
+admin_license_tool.py
+license_gen.py
+license_generator*.py
+*license_gen*.py
+*.lic
+.syslock

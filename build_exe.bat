@@ -37,6 +37,7 @@ echo Memulai kompilasi PyInstaller...
     --hidden-import "win32com.client" ^
     --hidden-import "updater" ^
     --hidden-import "auth" ^
+    --hidden-import "license_mgr" ^
     --hidden-import "PIL.ImageStat" ^
     --collect-submodules "PIL" ^
     --add-data "%MASTER_FILE%;site_management" ^
