@@ -96,6 +96,7 @@ from updater import (
     get_github_repo,
 )
 from auth import LoginDialog, make_session_token, verify_session_token
+from PIL import Image, ImageOps, ImageStat
 
 
 DEFAULT_MASTER_FILENAME = "Site Management -  20260927_160847.xlsx"
