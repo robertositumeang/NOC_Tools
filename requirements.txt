@@ -1,0 +1,10 @@
+﻿# === NOC Massive Checker ===
+openpyxl>=3.1
+xlrd>=2.0
+PyQt6>=6.7
+matplotlib>=3.8
+requests>=2.31
+Pillow>=10.0
+
+# === CCTV Report Builder ===
+pywin32>=306; platform_system == "Windows"

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#172A3B"/>
+      <stop offset="1" stop-color="#0A1420"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8AF4DB"/>
+      <stop offset="1" stop-color="#29AFC0"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="232" fill="url(#background)"/>
+  <path d="M333 220H246a48 48 0 0 0-48 48v82
+           M691 220h87a48 48 0 0 1 48 48v82
+           M198 674v82a48 48 0 0 0 48 48h87
+           M826 674v82a48 48 0 0 1-48 48h-87"
+        fill="none" stroke="#42D5BE" stroke-linecap="round"
+        stroke-linejoin="round" stroke-width="30"/>
+  <circle cx="512" cy="495" r="190" fill="#101F2D"
+          stroke="#B8F8EA" stroke-width="25"/>
+  <circle cx="512" cy="495" r="139" fill="#1C4555"/>
+  <circle cx="512" cy="495" r="103" fill="url(#lens)"/>
+  <circle cx="512" cy="495" r="42" fill="#123142"/>
+  <circle cx="485" cy="467" r="17" fill="#E3FFF5" opacity=".9"/>
+  <circle cx="780" cy="244" r="31" fill="#FF806B"/>
+  <circle cx="780" cy="244" r="10" fill="#FFE8D9"/>
+  <circle cx="727" cy="731" r="87" fill="#F2B66D"/>
+  <path d="m686 732 28 28 57-63" fill="none" stroke="#182431"
+        stroke-linecap="round" stroke-linejoin="round" stroke-width="23"/>
+</svg>
