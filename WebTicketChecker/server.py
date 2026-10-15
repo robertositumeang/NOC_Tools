@@ -293,6 +293,17 @@ async def get_gaps(
     return {"gaps": page, "total": total}
 
 
+def _save_to_downloads(filename: str, data: bytes) -> Path:
+    dl = Path.home() / "Downloads"
+    if not dl.exists():
+        dl = Path.home() / "Unduhan"
+    if not dl.exists():
+        dl = Path.home()
+    target = dl / filename
+    target.write_bytes(data)
+    return target
+
+
 # ── Export ─────────────────────────────────────────────────────────
 @app.get("/api/export")
 @app.get("/api/export/xlsx")
@@ -311,6 +322,7 @@ async def export_gaps_excel() -> StreamingResponse:
         tmp_path.unlink(missing_ok=True)
 
     filename = f"NOC_Gap_Ticket_{time.strftime('%Y-%m-%d')}.xlsx"
+    await asyncio.to_thread(_save_to_downloads, filename, content)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -330,11 +342,59 @@ async def export_gaps_csv() -> StreamingResponse:
     content = ("\ufeff" + csv_text).encode("utf-8")
 
     filename = f"NOC_Gap_Ticket_{time.strftime('%Y-%m-%d')}.csv"
+    await asyncio.to_thread(_save_to_downloads, filename, content)
     return StreamingResponse(
         BytesIO(content),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/api/export-save/{fmt}")
+async def export_and_save(fmt: str) -> dict:
+    gaps = _state.get("gaps", [])
+    if not gaps:
+        raise HTTPException(400, detail="Tidak ada data gap untuk diekspor.")
+
+    fmt_lower = fmt.lower()
+    filename = f"NOC_Gap_Ticket_{time.strftime('%Y-%m-%d')}.{fmt_lower}"
+    if fmt_lower == "xlsx":
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            await asyncio.to_thread(write_gap_workbook, gaps, tmp_path)
+            content = tmp_path.read_bytes()
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    elif fmt_lower == "csv":
+        csv_text = await asyncio.to_thread(generate_gap_csv_text, gaps)
+        content = ("\ufeff" + csv_text).encode("utf-8")
+    else:
+        raise HTTPException(400, detail="Format harus 'xlsx' atau 'csv'")
+
+    saved_path = await asyncio.to_thread(_save_to_downloads, filename, content)
+    return {
+        "ok": True,
+        "filename": filename,
+        "path": str(saved_path),
+        "folder": str(saved_path.parent),
+    }
+
+
+@app.post("/api/open-downloads")
+async def open_downloads_folder() -> dict:
+    dl = Path.home() / "Downloads"
+    if not dl.exists():
+        dl = Path.home() / "Unduhan"
+    if not dl.exists():
+        dl = Path.home()
+    try:
+        if os.name == "nt":
+            os.startfile(str(dl))
+            return {"ok": True, "path": str(dl)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "path": str(dl)}
 
 
 

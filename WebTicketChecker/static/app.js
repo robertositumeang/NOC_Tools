@@ -541,29 +541,24 @@ function renderPagination(total, offset) {
 // ── Export ────────────────────────────────────────────────────────
 async function exportGaps(format = "csv") {
   const isCsv = format === "csv";
-  const endpoint = isCsv ? "/api/export/csv" : "/api/export/xlsx";
   const ext = isCsv ? "csv" : "xlsx";
   setStatus(`Mengekspor data ke file ${ext.toUpperCase()}...`);
 
   try {
-    const res = await fetch(endpoint);
+    const res = await fetch(`/api/export-save/${ext}`, { method: "POST" });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.detail || `HTTP ${res.status}`);
     }
-    const blob = await res.blob();
-    const cd   = res.headers.get("Content-Disposition") || "";
-    const match = cd.match(/filename="?([^"]+)"?/);
-    const fname = match ? match[1] : `NOC_Gap_Ticket_${new Date().toISOString().slice(0, 10)}.${ext}`;
+    const d = await res.json();
+    setStatus(`Export berhasil: ${d.path}`);
 
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement("a");
-    a.href = url; a.download = fname;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setStatus(`Export berhasil: ${fname}`);
+    const wantOpen = confirm(
+      `File berhasil disimpan di folder Downloads!\n\nNama file:\n${d.filename}\n\nLokasi lengkap:\n${d.path}\n\nApakah Anda ingin membuka folder Downloads sekarang?`
+    );
+    if (wantOpen) {
+      await fetch("/api/open-downloads", { method: "POST" });
+    }
   } catch (e) {
     setStatus("Export gagal: " + e.message, false);
     alert("Export gagal: " + e.message);
