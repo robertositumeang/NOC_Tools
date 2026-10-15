@@ -520,6 +520,19 @@ async def export_tickets() -> StreamingResponse:
 
 @app.post("/api/open-ticket-checker")
 async def launch_ticket_checker() -> dict:
+    # Generate a one-time launch token so WebTicketChecker/main.py passes
+    # launch_guard.require_launcher_token() without showing "Akses Ditolak"
+    try:
+        from launch_guard import generate_launch_token  # noqa: PLC0415
+        token = generate_launch_token()
+    except Exception:
+        token = None
+
+    # Build the child environment with the token injected
+    child_env = os.environ.copy()
+    if token:
+        child_env["NOC_LAUNCH_TOKEN"] = token
+
     # Saat frozen (EXE), sys.executable adalah path EXE Dashboard itu sendiri
     # Ticket Checker EXE biasanya ada di folder yang sama (dist/)
     exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT / "dist"
@@ -536,10 +549,14 @@ async def launch_ticket_checker() -> dict:
         if c.exists():
             try:
                 if c.suffix.lower() == ".exe":
-                    subprocess.Popen([str(c)], creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                    subprocess.Popen(
+                        [str(c)],
+                        env=child_env,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    )
                     return {"success": True, "launched": str(c)}
                 elif c.suffix.lower() == ".py":
-                    subprocess.Popen([sys.executable, str(c)])
+                    subprocess.Popen([sys.executable, str(c)], env=child_env)
                     return {"success": True, "launched": str(c)}
             except Exception as e:
                 return {"success": False, "error": str(e)}

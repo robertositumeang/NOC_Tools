@@ -180,42 +180,56 @@ async def refresh_db(force: bool = Query(default=False)) -> dict:
 
 # ── File Upload ────────────────────────────────────────────────────
 @app.post("/api/upload/{file_type}")
-async def upload_file(file_type: str, file: UploadFile = File(...)) -> dict:
+async def upload_file(file_type: str, files: list[UploadFile] = File(...)) -> dict:
     if file_type not in ("down", "unmon"):
         raise HTTPException(400, detail="file_type harus 'down' atau 'unmon'")
 
-    suffix = Path(file.filename or "file.xlsx").suffix.lower()
-    if suffix not in (".xlsx", ".xlsm", ".xls"):
-        raise HTTPException(400, detail="File harus berformat .xlsx, .xlsm, atau .xls")
+    if not files:
+        raise HTTPException(400, detail="Tidak ada file yang diupload.")
 
-    content = await file.read()
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+    all_records: list[dict] = []
+    filenames: list[str] = []
 
-    try:
-        records = await asyncio.to_thread(read_incident_file, tmp_path)
-    except Exception as e:
-        tmp_path.unlink(missing_ok=True)
-        raise HTTPException(422, detail=str(e))
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    for file in files:
+        suffix = Path(file.filename or "file.xlsx").suffix.lower()
+        if suffix not in (".xlsx", ".xlsm", ".xls"):
+            raise HTTPException(400, detail=f"File '{file.filename}' harus berformat .xlsx, .xlsm, atau .xls")
+
+        content = await file.read()
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+
+        try:
+            records = await asyncio.to_thread(read_incident_file, tmp_path)
+            all_records.extend(records)
+            filenames.append(file.filename or "")
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            raise HTTPException(422, detail=f"Gagal membaca '{file.filename}': {e}")
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     if file_type == "down":
-        _state["down_rows"] = records
-        _state["down_filename"] = file.filename or ""
-        _state["down_count"] = len(records)
+        _state["down_rows"] = all_records
+        _state["down_filename"] = ", ".join(filenames)
+        _state["down_count"] = len(all_records)
     else:
-        _state["unmon_rows"] = records
-        _state["unmon_filename"] = file.filename or ""
-        _state["unmon_count"] = len(records)
+        _state["unmon_rows"] = all_records
+        _state["unmon_filename"] = ", ".join(filenames)
+        _state["unmon_count"] = len(all_records)
 
     # Reset previous check result whenever files change
     _state["gaps"] = []
     _state["summary"] = {}
     _state["checked"] = False
 
-    return {"ok": True, "count": len(records), "filename": file.filename}
+    return {
+        "ok": True,
+        "count": len(all_records),
+        "filename": ", ".join(filenames),
+        "file_count": len(files),
+    }
 
 
 # ── Run Audit ──────────────────────────────────────────────────────

@@ -159,34 +159,45 @@ function handleDragLeave(type) {
 function handleDrop(e, type) {
   e.preventDefault();
   document.getElementById(`${type}Card`).classList.remove("dragging");
-  const file = e.dataTransfer.files[0];
-  if (file) uploadFile(type, file);
+  const files = Array.from(e.dataTransfer.files).filter(f =>
+    /\.(xlsx|xlsm|xls)$/i.test(f.name)
+  );
+  if (files.length) uploadFiles(type, files);
+  else alert("Please drop .xlsx / .xlsm / .xls files.");
 }
 function handleFileChange(type, input) {
-  const file = input.files[0];
-  if (file) uploadFile(type, file);
+  const files = Array.from(input.files);
+  if (files.length) uploadFiles(type, files);
   input.value = ""; // allow re-uploading same file
 }
 
-function markUploadLoaded(type, filename, count) {
-  const card = document.getElementById(`${type}Card`);
-  const fnDiv = document.getElementById(`${type}Filename`);
-  const fnText = document.getElementById(`${type}FnText`);
+function markUploadLoaded(type, filename, count, fileCount) {
+  const card    = document.getElementById(`${type}Card`);
+  const fnDiv   = document.getElementById(`${type}Filename`);
+  const fnText  = document.getElementById(`${type}FnText`);
   const cntText = document.getElementById(`${type}CountText`);
-  const icon = document.getElementById(`${type}Icon`);
+  const icon    = document.getElementById(`${type}Icon`);
 
   card.classList.add("loaded");
   fnDiv.classList.remove("hidden");
-  fnText.textContent = filename;
-  cntText.textContent = `${count.toLocaleString("id-ID")} baris`;
+  // If multiple files, show count badge
+  if (fileCount && fileCount > 1) {
+    fnText.textContent = `${fileCount} files`;
+    cntText.textContent = `${count.toLocaleString("id-ID")} rows total`;
+  } else {
+    fnText.textContent = filename;
+    cntText.textContent = `${count.toLocaleString("id-ID")} rows`;
+  }
   if (icon) icon.textContent = "✅";
 }
 
-async function uploadFile(type, file) {
-  const suffix = file.name.split(".").pop().toLowerCase();
-  if (!["xlsx","xlsm","xls"].includes(suffix)) {
-    alert("File harus berformat .xlsx, .xlsm, atau .xls");
-    return;
+async function uploadFiles(type, files) {
+  for (const f of files) {
+    const suffix = f.name.split(".").pop().toLowerCase();
+    if (!["xlsx","xlsm","xls"].includes(suffix)) {
+      alert(`File '${f.name}' must be .xlsx, .xlsm, or .xls format`);
+      return;
+    }
   }
 
   const card = document.getElementById(`${type}Card`);
@@ -194,10 +205,10 @@ async function uploadFile(type, file) {
   card.style.opacity = ".6";
   card.style.pointerEvents = "none";
   if (icon) icon.textContent = "⏳";
-  setStatus(`Mengupload ${file.name}...`);
+  setStatus(`Uploading ${files.length} file(s)...`);
 
   const form = new FormData();
-  form.append("file", file);
+  for (const f of files) form.append("files", f);
 
   try {
     const res = await fetch(`/api/upload/${type}`, { method: "POST", body: form });
@@ -206,8 +217,11 @@ async function uploadFile(type, file) {
       throw new Error(j.detail || `HTTP ${res.status}`);
     }
     const d = await res.json();
-    markUploadLoaded(type, d.filename, d.count);
-    setStatus(`File ${d.filename} berhasil diupload (${d.count.toLocaleString("id-ID")} baris)`);
+    markUploadLoaded(type, d.filename, d.count, d.file_count);
+    const label = d.file_count > 1
+      ? `${d.file_count} files uploaded (${d.count.toLocaleString("id-ID")} rows total)`
+      : `${d.filename} uploaded (${d.count.toLocaleString("id-ID")} rows)`;
+    setStatus(label);
 
     // Reset results when new file uploaded
     hideResults();
@@ -217,8 +231,8 @@ async function uploadFile(type, file) {
     checkReady(status);
   } catch (e) {
     if (icon) icon.textContent = type === "down" ? "📡" : "🖥️";
-    setStatus("Upload gagal: " + e.message, false);
-    alert("Upload gagal: " + e.message);
+    setStatus("Upload failed: " + e.message, false);
+    alert("Upload failed: " + e.message);
   } finally {
     card.style.opacity = "";
     card.style.pointerEvents = "";
