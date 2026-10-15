@@ -1,10 +1,15 @@
-﻿# === NOC Massive Checker ===
+# === NOC Massive Checker ===
 openpyxl>=3.1
 xlrd>=2.0
 PyQt6>=6.7
 matplotlib>=3.8
 requests>=2.31
 Pillow>=10.0
+cryptography>=45.0
+fastapi>=0.115
+uvicorn>=0.34
+pywebview>=6.2.1
+python-multipart>=0.0.9
 
 # === CCTV Report Builder ===
 pywin32>=306; platform_system == "Windows"

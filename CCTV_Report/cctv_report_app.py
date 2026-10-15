@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -41,6 +42,15 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+)
+
+from noc_brand import (
+    DARK_THEME,
+    NocLogoMark,
+    ThemeSelector,
+    palette_for,
+    set_application_theme,
+    system_theme_name,
 )
 
 
@@ -188,6 +198,13 @@ class CalibrationCanvas(QWidget):
         self._active: str | None = None
         self._resize = False
         self._last = QPointF()
+        self._canvas_background = QColor("#172B48")
+        self._canvas_text = QColor("#A8B9CF")
+
+    def set_theme_colors(self, background: str, text: str) -> None:
+        self._canvas_background = QColor(background)
+        self._canvas_text = QColor(text)
+        self.update()
 
     def set_image(self, path: Path | None) -> None:
         pixmap = QPixmap(str(path)) if path is not None else QPixmap()
@@ -216,13 +233,13 @@ class CalibrationCanvas(QWidget):
     def paintEvent(self, event: Any) -> None:
         del event
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#1c252c"))
+        painter.fillRect(self.rect(), self._canvas_background)
         image_rect = self._image_rect()
         if self.image:
             painter.drawPixmap(image_rect, self.image,
                                QRectF(self.image.rect()))
         else:
-            painter.setPen(QColor("#d9e1e7"))
+            painter.setPen(self._canvas_text)
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                              "Tambahkan screenshot untuk mengatur area crop")
             return
@@ -1019,15 +1036,40 @@ class MainWindow(QMainWindow):
         application = QApplication.instance()
         if application:
             application.installEventFilter(self)
+        self.current_theme_name = (
+            application.property("nocTheme") if application else None
+        ) or system_theme_name(application)
         self._build_ui()
+        self._apply_theme(self.current_theme_name)
 
     def _build_ui(self) -> None:
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(12, 10, 12, 12)
-        root.setSpacing(8)
+        root.setContentsMargins(18, 14, 18, 16)
+        root.setSpacing(12)
+
+        header = QFrame()
+        header.setObjectName("cctvHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 10, 16, 10)
+        header_layout.setSpacing(12)
+        header_layout.addWidget(NocLogoMark(38))
+        title_stack = QVBoxLayout()
+        title_stack.setSpacing(2)
+        title = QLabel("CCTV Extractor")
+        title.setObjectName("headerTitle")
+        title_stack.addWidget(title)
+        subtitle = QLabel("Kalibrasi capture, tinjau data kamera, dan ekspor laporan")
+        subtitle.setObjectName("brandSubtitle")
+        title_stack.addWidget(subtitle)
+        header_layout.addLayout(title_stack, 1)
+        self.theme_selector = ThemeSelector(self.current_theme_name)
+        self.theme_selector.themeChanged.connect(self._apply_theme)
+        header_layout.addWidget(self.theme_selector)
+        root.addWidget(header)
 
         self.busy_banner = QWidget()
+        self.busy_banner.setObjectName("busyBanner")
         busy_layout = QHBoxLayout(self.busy_banner)
         busy_layout.setContentsMargins(10, 6, 10, 6)
         busy_layout.setSpacing(10)
@@ -1040,10 +1082,6 @@ class MainWindow(QMainWindow):
         busy_layout.addWidget(self.activity_indicator)
         busy_layout.addWidget(self.busy_status_label, 1)
         busy_layout.addWidget(self.busy_progress)
-        self.busy_banner.setStyleSheet(
-            "QWidget { background-color: #18262d; border-radius: 6px; }"
-            "QLabel { color: #e7f0f3; font-weight: 600; }"
-        )
         self.export_watchdog = QTimer(self)
         self.export_watchdog.setInterval(1000)
         self.export_watchdog.timeout.connect(self._update_export_watchdog)
@@ -1105,6 +1143,7 @@ class MainWindow(QMainWindow):
         self.reset_crop_button = QPushButton("Reset kotak crop")
         self.reset_crop_button.clicked.connect(self.reset_current_calibration)
         self.process_button = QPushButton("Proses screenshot")
+        self.process_button.setObjectName("accentBtn")
         self.process_button.clicked.connect(self.process_images)
         self.reprocess_button = QPushButton("Proses ulang semua")
         self.reprocess_button.clicked.connect(self.reprocess_images)
@@ -1190,6 +1229,7 @@ class MainWindow(QMainWindow):
             "Place in Cell; Floating lebih kompatibel dengan Excel versi lama."
         )
         self.export_button = QPushButton("Ekspor ke template Excel...")
+        self.export_button.setObjectName("accentBtn")
         self.export_button.setStyleSheet("font-weight: 700; padding: 7px 14px;")
         self.export_button.clicked.connect(self.export_workbook)
         footer.addWidget(self.sort_check)
@@ -1206,6 +1246,16 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self._set_busy(False)
+
+    def _apply_theme(self, theme_name: str) -> None:
+        self.current_theme_name = theme_name
+        application = QApplication.instance()
+        if application is not None:
+            set_application_theme(theme_name, application)
+        self.theme_selector.set_theme(theme_name)
+        theme = palette_for(theme_name)
+        for canvas in self.calibration_canvases.values():
+            canvas.set_theme_colors(theme["card_alt"], theme["muted"])
 
     def _set_process_status(self, message: str) -> None:
         self.process_status.setText(message)
@@ -1639,7 +1689,6 @@ class MainWindow(QMainWindow):
         label = QLabel("Belum diproses" if not data else "")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setMinimumSize(130, 78)
-        label.setStyleSheet("color: #6b7780;")
         if data:
             image = QImage.fromData(data)
             if not image.isNull():

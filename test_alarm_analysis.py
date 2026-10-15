@@ -12,17 +12,25 @@ from openpyxl import Workbook, load_workbook
 from PyQt6.QtCore import QEvent, QEventLoop, QRect, QSettings, QThread, QTimer, Qt
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QGraphicsDropShadowEffect,
     QGridLayout,
+    QHBoxLayout,
     QMainWindow,
 )
 
 from app import StartupSplash, _StartupSplashDismissal
-from noc_brand import apply_standard_window_chrome
+from noc_brand import (
+    DARK_THEME,
+    LIGHT_THEME,
+    apply_standard_window_chrome,
+    set_application_theme,
+)
 from desktop_app import (
     AppSelectionDialog,
     DEFAULT_RESOLUTION,
     DEFAULT_SCALE_PERCENT,
+    MassiveSiteDownApp,
     NORMALIZED_COLUMNS,
     SCALE_OPTIONS,
     SUMMARY_REPORT_COLUMNS,
@@ -120,6 +128,35 @@ class AlarmAnalysisTests(unittest.TestCase):
         self.assertEqual(rows[0]["Vendor Transmisi"], "IPT")
         self.assertEqual(rows[0]["Alarm Type"], "Telecommunication")
         self.assertEqual(rows[0]["Alarm State"], "Cleared")
+
+    def test_timezone_aware_iso_timestamps_are_normalized_to_naive(self):
+        alarms = normalize_alarms([
+            {
+                "Site ID": "MLU00001",
+                "Alarm Name": "NE Disconnected",
+                "Occurrence Time": "2026-10-11T05:00:00+00:00",
+                "Clear Time": "2026-10-11T05:30:00+00:00",
+            },
+        ], self.site_index, "ZTE")
+
+        self.assertEqual(
+            alarms[0]["Occurrence Time"],
+            datetime(2026, 10, 11, 5),
+        )
+        self.assertEqual(
+            alarms[0]["Clear Time"],
+            datetime(2026, 10, 11, 5, 30),
+        )
+        summary = summarize_providers(
+            alarms,
+            {"NE Disconnected"},
+            now=datetime(2026, 10, 11, 6),
+            range_start=datetime(2026, 10, 11, 4),
+            range_end=datetime(2026, 10, 11, 7),
+        )
+
+        self.assertEqual(summary[0]["Peak Simultaneous Sites"], 1)
+        self.assertEqual(summary[0]["Sites at Peak"], ["MLU00001"])
 
 
     def test_peak_counts_distinct_sites_during_overlapping_cleared_alarms(self):
@@ -929,6 +966,37 @@ class DesktopExportTests(unittest.TestCase):
             ["MLU00002", "MLU00001"],
         )
 
+    def test_report_exports_store_formula_like_import_values_as_text(self):
+        formula_like_value = '=HYPERLINK("https://example.invalid","Open")'
+        alarms = [
+            {
+                "Vendor": "ZTE",
+                "Site ID": "MLU00001",
+                "Alarm Name": formula_like_value,
+                "Occurrence Time": datetime(2026, 9, 27, 9),
+                "_raw": {"Alarm Name": formula_like_value},
+            }
+        ]
+
+        with TemporaryDirectory() as directory:
+            full_path = Path(directory) / "formula_full.xlsx"
+            selected_path = Path(directory) / "formula_selected.xlsx"
+            save_report(full_path, alarms, [])
+            save_selected_site_report(selected_path, alarms, [])
+            full_workbook = load_workbook(full_path, data_only=False)
+            selected_workbook = load_workbook(selected_path, data_only=False)
+
+        for workbook in (full_workbook, selected_workbook):
+            matching_cells = [
+                cell
+                for sheet in workbook.worksheets
+                for row in sheet.iter_rows()
+                for cell in row
+                if cell.value == formula_like_value
+            ]
+            self.assertTrue(matching_cells)
+            self.assertTrue(all(cell.data_type == "s" for cell in matching_cells))
+
     def test_detects_and_normalizes_huawei_alarms_with_duration(self):
         output = StringIO()
         writer = csv.writer(output)
@@ -1093,7 +1161,10 @@ class DisplaySettingsTests(unittest.TestCase):
                 str(Path(directory) / "settings.ini"),
                 QSettings.Format.IniFormat,
             )
-            with patch("desktop_app._display_settings", return_value=settings):
+            with (
+                patch("desktop_app._display_settings", return_value=settings),
+                patch.object(AppSelectionDialog, "_start_background_update_check"),
+            ):
                 dialog = AppSelectionDialog()
 
         layout = dialog.scale_combo.parentWidget().layout()
@@ -1110,7 +1181,40 @@ class DisplaySettingsTests(unittest.TestCase):
             dialog.scale_combo.currentData(),
             DEFAULT_SCALE_PERCENT,
         )
-        self.assertEqual(len(dialog.application_choice_buttons), 2)
+        self.assertEqual(len(dialog.application_choice_buttons), 5)
+        choice_layout = next(
+            item.layout()
+            for index in range(dialog.layout().count())
+            if (item := dialog.layout().itemAt(index)).layout() is not None
+            and item.layout().indexOf(dialog.application_choice_buttons[0]) >= 0
+        )
+        self.assertIsInstance(choice_layout, QGridLayout)
+        self.assertEqual(
+            choice_layout.indexOf(dialog.application_choice_buttons[0]),
+            0,
+        )
+        self.assertEqual(
+            choice_layout.indexOf(dialog.application_choice_buttons[1]),
+            1,
+        )
+        self.assertEqual(
+            dialog.application_choice_buttons[0].layout().contentsMargins().left(),
+            16,
+        )
+        self.assertEqual(
+            dialog.application_choice_buttons[0].layout().contentsMargins().top(),
+            14,
+        )
+        self.assertEqual(
+            [button.accessibleName() for button in dialog.application_choice_buttons],
+            [
+                "Trouble Ticket Dashboard",
+                "Ticket Checker Gap",
+                "Check Massive",
+                "CCTV Extractor",
+                "Capture Modem",
+            ],
+        )
         self.assertTrue(
             all(
                 isinstance(button.graphicsEffect(), QGraphicsDropShadowEffect)
@@ -1118,6 +1222,59 @@ class DisplaySettingsTests(unittest.TestCase):
             )
         )
         dialog.close()
+
+    def test_launcher_choice_buttons_preserve_workspace_selection(self):
+        with TemporaryDirectory() as directory:
+            settings = QSettings(
+                str(Path(directory) / "settings.ini"),
+                QSettings.Format.IniFormat,
+            )
+            with (
+                patch("desktop_app._display_settings", return_value=settings),
+                patch.object(AppSelectionDialog, "_start_background_update_check"),
+            ):
+                for button_index, selection in enumerate(
+                    ("dashboard", "ticket_checker", "massive", "cctv", "modem")
+                ):
+                    dialog = AppSelectionDialog()
+                    dialog.application_choice_buttons[button_index].click()
+                    self.assertEqual(dialog.selection, selection)
+                    self.assertEqual(
+                        dialog.result(),
+                        QDialog.DialogCode.Accepted,
+                    )
+                    dialog.close()
+
+    def test_massive_checker_theme_switch_preserves_workspace_controls(self):
+        application = QApplication.instance() or QApplication([])
+        previous_theme = application.property("nocTheme")
+        previous_stylesheet = application.styleSheet()
+        previous_icon = application.windowIcon()
+        set_application_theme(DARK_THEME, application)
+        with (
+            patch.object(MassiveSiteDownApp, "_default_alarm_paths", return_value={}),
+            patch("desktop_app.DEFAULT_MASTER_PATH", Path("missing-master.xlsx")),
+        ):
+            window = MassiveSiteDownApp()
+        try:
+            window.theme_selector.light_button.click()
+            self.assertEqual(window.current_theme_name, LIGHT_THEME)
+            self.assertEqual(application.property("nocTheme"), LIGHT_THEME)
+            self.assertIn("#F2F6FC", application.styleSheet())
+            self.assertIsNotNone(window.btn_run)
+            self.assertIsNotNone(window.table_summary)
+
+            window.theme_selector.dark_button.click()
+            self.assertEqual(window.current_theme_name, DARK_THEME)
+            self.assertEqual(application.property("nocTheme"), DARK_THEME)
+            self.assertIn("#091526", application.styleSheet())
+            self.assertIsNotNone(window.btn_run)
+            self.assertIsNotNone(window.table_summary)
+        finally:
+            window.close()
+            application.setStyleSheet(previous_stylesheet)
+            application.setProperty("nocTheme", previous_theme)
+            application.setWindowIcon(previous_icon)
 
     def test_startup_splash_has_an_advancing_loading_animation(self):
         splash = StartupSplash()

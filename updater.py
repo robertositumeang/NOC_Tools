@@ -5,6 +5,8 @@ downloading updates in a background worker, and applying self-updates on Windows
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -126,23 +128,70 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
     html_url = data.get("html_url") or f"https://github.com/{target_repo}/releases"
     published_at = data.get("published_at", "")
 
-    # Look for executable asset (.exe)
+    # ── Modular / Delta Asset Detection ──
     assets = data.get("assets", [])
     download_url = None
     asset_name = None
     asset_size = 0
 
-    # Prefer assets named "NOC Tools.exe", "NOC_Tools.exe", or any .exe
-    for a in assets:
-        name = a.get("name", "")
-        if name.lower().endswith(".exe"):
-            download_url = a.get("browser_download_url")
-            asset_name = name
-            asset_size = a.get("size", 0)
-            if "noc" in name.lower():
-                break
+    base_app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
-    has_update = is_newer_version(APP_VERSION, tag_name)
+    # Known module locations relative to app root
+    KNOWN_MODULE_PATHS = {
+        "NOC Tools.exe": Path("NOC Tools.exe"),
+        "Capture_Modem.exe": Path("bin/Capture_Modem.exe"),
+        "NOC Web Dashboard.exe": Path("bin/NOC Web Dashboard.exe"),
+        "NOC Web Ticket Checker.exe": Path("bin/NOC Web Ticket Checker.exe"),
+        "NOC VPN Manager.exe": Path("bin/NOC VPN Manager.exe"),
+        "Site Management.xlsx": Path("data/Site Management.xlsx"),
+    }
+
+    modular_items: list[dict[str, Any]] = []
+
+    for a in assets:
+        a_name = a.get("name", "")
+        a_url = a.get("browser_download_url")
+        a_size = a.get("size", 0)
+
+        # Main launcher fallback
+        if a_name.lower().endswith(".exe") and "noc" in a_name.lower() and not download_url:
+            download_url = a_url
+            asset_name = a_name
+            asset_size = a_size
+
+        # Check if asset matches any known or new modular component
+        for known_name, rel_path in KNOWN_MODULE_PATHS.items():
+            if a_name.lower() == known_name.lower():
+                local_file = base_app_dir / rel_path
+                is_missing = not local_file.exists()
+                size_diff = is_missing or abs(local_file.stat().st_size - a_size) > 1024  # different size
+                
+                modular_items.append({
+                    "name": known_name,
+                    "target_rel_path": str(rel_path),
+                    "download_url": a_url,
+                    "size": a_size,
+                    "is_missing": is_missing,
+                    "needs_update": size_diff,
+                })
+                break
+        else:
+            # New feature or addon executable in bin/
+            if a_name.endswith(".exe") and a_name not in ("NOC Tools.exe", "NOC_Tools.exe", "NOC_Tools_Setup.exe"):
+                rel_path = Path("bin") / a_name
+                local_file = base_app_dir / rel_path
+                modular_items.append({
+                    "name": a_name,
+                    "target_rel_path": str(rel_path),
+                    "download_url": a_url,
+                    "size": a_size,
+                    "is_missing": not local_file.exists(),
+                    "needs_update": True,
+                })
+
+    # Overall update flag: version tag is newer OR any modular component is missing/needs update
+    pending_modular = [m for m in modular_items if m.get("needs_update")]
+    has_update = is_newer_version(APP_VERSION, tag_name) or bool(pending_modular)
 
     return {
         "repo": target_repo,
@@ -155,6 +204,8 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
         "asset_name": asset_name,
         "asset_size": asset_size,
         "has_update": has_update,
+        "modular_items": modular_items,
+        "pending_modular": pending_modular,
     }
 
 
@@ -185,48 +236,76 @@ class CheckUpdateWorker(QThread):
             self.check_failed.emit(f"Error: {err}")
 
 
-class DownloadUpdateWorker(QThread):
-    """Threaded worker to download the update executable with progress reporting."""
-    progress = pyqtSignal(int, int, float)   # (bytes_done, bytes_total, percent)
-    download_finished = pyqtSignal(str)      # target_file_path
-    download_failed = pyqtSignal(str)        # error_message
+class ModularDownloadWorker(QThread):
+    """Threaded worker to download multiple modular files (deltas/new features)."""
+    item_progress = pyqtSignal(str, int, int, float)  # (item_name, done, total, pct)
+    overall_progress = pyqtSignal(int, int)           # (current_index, total_items)
+    all_finished = pyqtSignal(list)                   # list of successfully updated relative paths
+    failed = pyqtSignal(str)                          # error message
 
-    def __init__(self, download_url: str, target_path: Path, parent: QWidget | None = None) -> None:
+    def __init__(self, items: list[dict[str, Any]], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.download_url = download_url
-        self.target_path = Path(target_path)
+        self.items = items
         self._cancelled = False
 
     def cancel(self) -> None:
         self._cancelled = True
 
     def run(self) -> None:
+        base_app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+        updated_paths: list[str] = []
+        total_items = len(self.items)
+
         try:
-            self.target_path.parent.mkdir(parents=True, exist_ok=True)
-            headers = {"User-Agent": f"NOCTools-Updater/{APP_VERSION}"}
+            for idx, item in enumerate(self.items, 1):
+                if self._cancelled:
+                    return
 
-            with requests.get(self.download_url, headers=headers, stream=True, timeout=15) as r:
-                r.raise_for_status()
-                total_size = int(r.headers.get("content-length", 0))
-                downloaded = 0
+                name = item.get("name", "modul")
+                url = item.get("download_url")
+                rel_path = item.get("target_rel_path")
+                if not url or not rel_path:
+                    continue
 
-                with open(self.target_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=65536):
-                        if self._cancelled:
-                            f.close()
-                            self.target_path.unlink(missing_ok=True)
-                            return
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            pct = (downloaded / total_size * 100) if total_size > 0 else 0.0
-                            self.progress.emit(downloaded, total_size, pct)
+                self.overall_progress.emit(idx, total_items)
 
-            self.download_finished.emit(str(self.target_path))
+                # Destination file path
+                dest_path = base_app_dir / rel_path
+                temp_dest = dest_path.with_suffix(dest_path.suffix + ".part")
+                temp_dest.parent.mkdir(parents=True, exist_ok=True)
+
+                headers = {"User-Agent": f"NOCTools-Updater/{APP_VERSION}"}
+                with requests.get(url, headers=headers, stream=True, timeout=20) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get("content-length", 0))
+                    downloaded = 0
+
+                    with open(temp_dest, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=65536):
+                            if self._cancelled:
+                                f.close()
+                                temp_dest.unlink(missing_ok=True)
+                                return
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                pct = (downloaded / total_size * 100) if total_size > 0 else 0.0
+                                self.item_progress.emit(name, downloaded, total_size, pct)
+
+                # Move downloaded temp file into place (safely swap old if locked)
+                if dest_path.exists():
+                    old_backup = dest_path.with_suffix(dest_path.suffix + ".old")
+                    try:
+                        dest_path.replace(old_backup)
+                    except Exception:
+                        pass
+                
+                temp_dest.replace(dest_path)
+                updated_paths.append(rel_path)
+
+            self.all_finished.emit(updated_paths)
         except Exception as err:
-            if self.target_path.exists():
-                self.target_path.unlink(missing_ok=True)
-            self.download_failed.emit(str(err))
+            self.failed.emit(str(err))
 
 
 # ── Self-Update Installer (Windows) ───────────────────────────────────────────
@@ -300,7 +379,7 @@ class UpdateDialog(QDialog):
         self.release_info = release_info
         self.download_worker: DownloadUpdateWorker | None = None
 
-        self.setWindowTitle(f"Pembaruan Aplikasi — {APP_NAME}")
+        self.setWindowTitle(f"Software Updates — {APP_NAME}")
         self.setMinimumSize(560, 420)
         self._build_ui()
 
@@ -317,13 +396,13 @@ class UpdateDialog(QDialog):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
-        title_lbl = QLabel("Versi Baru Tersedia!")
+        title_lbl = QLabel("New Version Available!")
         title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: palette(text);")
         title_col.addWidget(title_lbl)
 
         tag = self.release_info.get("tag_name", "")
         rel_name = self.release_info.get("name", "")
-        sub_text = f"Versi Anda: <b>v{APP_VERSION}</b>  ➔  Versi Terbaru: <b>{tag}</b>"
+        sub_text = f"Current Version: <b>v{APP_VERSION}</b>  ➔  Latest Version: <b>{tag}</b>"
         sub_lbl = QLabel(sub_text)
         sub_lbl.setStyleSheet("font-size: 13px; color: #38BDF8;")
         title_col.addWidget(sub_lbl)
@@ -338,16 +417,28 @@ class UpdateDialog(QDialog):
         line.setStyleSheet("color: palette(mid); max-height: 1px;")
         layout.addWidget(line)
 
-        # Changelog / Release Notes
-        lbl_notes = QLabel("Catatan Perubahan (Changelog):")
+        # Changelog / Release Notes & Modular Details
+        lbl_notes = QLabel("Changelog & Detected Components:")
         lbl_notes.setStyleSheet("font-weight: 600; font-size: 12px;")
         layout.addWidget(lbl_notes)
 
         self.text_browser = QTextBrowser()
-        self.text_browser.setOpenExternalLinks(True)
-        raw_body = self.release_info.get("body", "Tidak ada catatan rilis.")
-        # Basic markdown to HTML conversion for bullet points and headers
-        formatted_body = raw_body.replace("\n", "<br>")
+        self.text_browser.setOpenExternalLinks(False)
+        raw_body = self.release_info.get("body", "No release notes provided.")
+        # Strip raw markdown file links or github references from changelog
+        clean_body = re.sub(r"\[([^\]]+)\]\(https?://[^\)]+\)", r"\1", raw_body)
+        formatted_body = clean_body.replace("\n", "<br>")
+
+        pending_modular = self.release_info.get("pending_modular", [])
+        if pending_modular:
+            mod_lines = ["<br><b>📦 Modular Updates & New Features:</b><ul>"]
+            for m in pending_modular:
+                status_text = "✨ New Feature / Module" if m.get("is_missing") else "🔄 Version Update"
+                size_mb = m.get("size", 0) / (1024 * 1024)
+                mod_lines.append(f"<li><b>{m.get('name')}</b> ({size_mb:.1f} MB) — <i>{status_text}</i></li>")
+            mod_lines.append("</ul><small style='color: #10B981;'>Only the above components will be downloaded efficiently!</small>")
+            formatted_body += "".join(mod_lines)
+
         self.text_browser.setHtml(
             f"<div style='font-family: Segoe UI, sans-serif; font-size: 12px; line-height: 1.4;'>"
             f"<b>{rel_name}</b><br><br>{formatted_body}</div>"
@@ -371,24 +462,19 @@ class UpdateDialog(QDialog):
         self.status_lbl.setVisible(False)
         layout.addWidget(self.status_lbl)
 
-        # Action Buttons
+        # Action Buttons (Clean enterprise style, no GitHub references)
         btn_layout = QHBoxLayout()
-
-        self.btn_browser = QPushButton("🌐 Buka di GitHub")
-        self.btn_browser.clicked.connect(self._open_in_browser)
-        btn_layout.addWidget(self.btn_browser)
-
         btn_layout.addStretch()
 
-        self.btn_cancel = QPushButton("Nanti Saja")
+        self.btn_cancel = QPushButton("Later")
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
 
-        download_url = self.release_info.get("download_url")
-        if download_url:
-            self.btn_update = QPushButton("⚡ Update Sekarang")
+        has_any_update = self.release_info.get("has_update")
+        if has_any_update:
+            self.btn_update = QPushButton("⚡ Update Now")
             self.btn_update.setStyleSheet(
-                "QPushButton { background-color: #0284C7; color: white; font-weight: bold; padding: 6px 16px; border-radius: 6px; }"
+                "QPushButton { background-color: #0284C7; color: white; font-weight: bold; padding: 6px 18px; border-radius: 6px; }"
                 "QPushButton:hover { background-color: #0369A1; }"
             )
             self.btn_update.clicked.connect(self._start_download)
@@ -398,59 +484,80 @@ class UpdateDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    def _open_in_browser(self) -> None:
-        url = self.release_info.get("html_url")
-        if url:
-            import webbrowser
-            webbrowser.open(url)
-
     def _start_download(self) -> None:
-        download_url = self.release_info.get("download_url")
-        if not download_url:
-            QMessageBox.warning(self, "Download Gagal", "File installer (.exe) tidak ditemukan pada rilis ini.")
-            return
-
-        # Prepare target file in Temp directory
-        asset_name = self.release_info.get("asset_name") or f"{APP_NAME}_Update.exe"
-        target_path = Path(tempfile.gettempdir()) / asset_name
+        pending_modular = self.release_info.get("pending_modular", [])
 
         self.progress_bar.setVisible(True)
         self.status_lbl.setVisible(True)
-        self.status_lbl.setText("Menghubungi server GitHub...")
+        self.status_lbl.setText("Connecting to update server...")
         if self.btn_update:
             self.btn_update.setEnabled(False)
-        self.btn_cancel.setText("Batal")
+        self.btn_cancel.setText("Cancel")
 
-        self.download_worker = DownloadUpdateWorker(download_url, target_path, self)
-        self.download_worker.progress.connect(self._on_progress)
-        self.download_worker.download_finished.connect(self._on_download_complete)
-        self.download_worker.download_failed.connect(self._on_download_error)
-        self.download_worker.start()
+        if pending_modular:
+            # Download only the specific modular components that changed / new features
+            self.download_worker = ModularDownloadWorker(pending_modular, self)
+            self.download_worker.item_progress.connect(self._on_modular_item_progress)
+            self.download_worker.all_finished.connect(self._on_modular_download_complete)
+            self.download_worker.failed.connect(self._on_download_error)
+            self.download_worker.start()
+        else:
+            # Fallback: standard main executable update
+            download_url = self.release_info.get("download_url")
+            if not download_url:
+                QMessageBox.warning(self, "Download Failed", "No update file found on the server.")
+                return
 
-    def _on_progress(self, downloaded: int, total: int, pct: float) -> None:
+            asset_name = self.release_info.get("asset_name") or f"{APP_NAME}_Update.exe"
+            target_path = Path(tempfile.gettempdir()) / asset_name
+
+            self.download_worker = ModularDownloadWorker([{
+                "name": asset_name,
+                "download_url": download_url,
+                "target_rel_path": asset_name
+            }], self)
+            self.download_worker.item_progress.connect(self._on_modular_item_progress)
+            self.download_worker.all_finished.connect(lambda paths: self._on_download_complete(str(target_path)))
+            self.download_worker.failed.connect(self._on_download_error)
+            self.download_worker.start()
+
+    def _on_modular_item_progress(self, name: str, downloaded: int, total: int, pct: float) -> None:
         self.progress_bar.setValue(int(pct))
         d_mb = downloaded / (1024 * 1024)
         t_mb = total / (1024 * 1024)
         if total > 0:
-            self.status_lbl.setText(f"Mengunduh: {d_mb:.1f} MB / {t_mb:.1f} MB ({pct:.0f}%)")
+            self.status_lbl.setText(f"Downloading {name}: {d_mb:.1f} MB / {t_mb:.1f} MB ({pct:.0f}%)")
         else:
-            self.status_lbl.setText(f"Mengunduh: {d_mb:.1f} MB...")
+            self.status_lbl.setText(f"Downloading {name}: {d_mb:.1f} MB...")
+
+    def _on_modular_download_complete(self, updated_paths: list) -> None:
+        self.status_lbl.setText("✅ All components updated successfully!")
+        self.progress_bar.setValue(100)
+        
+        updated_list = "\n".join([f"• {p}" for p in updated_paths])
+        QMessageBox.information(
+            self,
+            "Update Complete",
+            f"The following modules/features were successfully updated:\n\n{updated_list}\n\n"
+            "You can use them immediately without restarting the application."
+        )
+        self.accept()
 
     def _on_download_complete(self, target_path: str) -> None:
-        self.status_lbl.setText("✅ Unduhan selesai! Memasang update...")
+        self.status_lbl.setText("✅ Download complete! Preparing update...")
         self.progress_bar.setValue(100)
 
-        # Confirm and restart
+        # Confirm and restart for main executable
         msg = QMessageBox(self)
-        msg.setWindowTitle("Update Siap Dipasang")
+        msg.setWindowTitle("Update Ready to Install")
         msg.setIcon(QMessageBox.Icon.Information)
-        msg.setText("File pembaruan berhasil diunduh.")
+        msg.setText("Main application update has been downloaded.")
         msg.setInformativeText(
-            "Aplikasi akan ditutup sementara dan dimulai ulang secara otomatis dengan versi terbaru.\n\n"
-            "Lanjutkan proses restart?"
+            "The application will restart automatically to apply the latest version.\n\n"
+            "Restart and update now?"
         )
-        btn_now = msg.addButton("Restart & Update Sekarang", QMessageBox.ButtonRole.AcceptRole)
-        msg.addButton("Nanti Saja", QMessageBox.ButtonRole.RejectRole)
+        btn_now = msg.addButton("Restart & Update Now", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Later", QMessageBox.ButtonRole.RejectRole)
         msg.setDefaultButton(btn_now)
         msg.exec()
 
@@ -460,11 +567,11 @@ class UpdateDialog(QDialog):
             self.accept()
 
     def _on_download_error(self, err_msg: str) -> None:
-        self.status_lbl.setText(f"❌ Gagal: {err_msg}")
-        QMessageBox.critical(self, "Gagal Mengunduh Update", f"Terjadi kesalahan saat mengunduh:\n\n{err_msg}")
+        self.status_lbl.setText(f"❌ Failed: {err_msg}")
+        QMessageBox.critical(self, "Update Download Failed", f"An error occurred while downloading:\n\n{err_msg}")
         if self.btn_update:
             self.btn_update.setEnabled(True)
-        self.btn_cancel.setText("Tutup")
+        self.btn_cancel.setText("Close")
 
     def reject(self) -> None:
         if self.download_worker and self.download_worker.isRunning():

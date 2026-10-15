@@ -1,27 +1,12 @@
-"""
-Enterprise Cryptographic License Management Module for NOC Tools.
-PT. Lindu Putra Utama | Network Operations Center
+"""Verify Ed25519-signed, machine-bound NOC Tools licenses.
 
-Security Architecture:
-  1. Hardware-Bound Fingerprinting:
-     - Derives Machine ID from Windows Registry Cryptography MachineGuid.
-     - Fallback to hardware MAC node if registry is restricted.
-     - Licenses cannot be transplanted to another workstation.
-  2. Authenticated End-to-End Encryption (Encrypt-then-MAC):
-     - Payload is fully encrypted using PBKDF2-SHA256 + CTR Keystream.
-     - Integrity secured with HMAC-SHA256 authentication tag.
-     - License key contains zero plaintext; unauthorized parties cannot inspect data.
-  3. Time-Limited Access Control & Anti-Rollback:
-     - Supports 1-Month (30 days), custom, or 1-Year license durations.
-     - Validates current date against expiration epoch.
-     - Local encrypted telemetry prevents system clock manipulation.
+License payloads are authenticated but not encrypted. Expiration is checked
+against the system clock, with a local last-seen timestamp for basic rollback
+detection; that local state is not tamper-proof against a local administrator.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
-import json
 import os
 import sys
 import time
@@ -29,7 +14,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final
+from urllib.parse import urlsplit, urlunsplit
 
+import requests
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -43,9 +30,17 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from license_crypto import (
+    ACTIVATION_PREFIX,
+    LEGACY_LICENSE_PREFIX,
+    LICENSE_PREFIX,
+    LICENSE_PUBLIC_KEY,
+    decode_signed_payload,
+    normalize_email,
+)
 
-# Application Cryptographic Master Pepper for License Verification
-_LICENSE_PEPPER: Final[bytes] = b"NOC_ENTERPRISE_KEY_V2_2026_PT_LINDU_PUTRA_UTAMA_RESTRICTED"
+_LICENSE_PREFIX: Final[str] = LEGACY_LICENSE_PREFIX
+_LICENSE_PUBLIC_KEY: Final[bytes] = LICENSE_PUBLIC_KEY
 
 # Local Storage paths in %APPDATA%/NOC_Tools
 _STORAGE_DIR: Path = Path(os.environ.get("APPDATA", str(Path.home()))) / "NOC_Tools"
@@ -84,47 +79,32 @@ def get_machine_id() -> str:
     return f"NOC-{digest[:4]}-{digest[4:8]}-{digest[8:12]}-{digest[12:16]}"
 
 
-def _decrypt_and_verify_blob(encrypted_key: str) -> dict:
-    """Decrypt authenticated encrypted license token and verify HMAC integrity."""
-    clean_str = encrypted_key.strip()
-    # Strip prefix and all formatting dashes/spaces
-    for prefix in ("NOC-LIC1M-", "NOC-LIC-", "NOC-"):
-        if clean_str.startswith(prefix):
-            clean_str = clean_str[len(prefix):]
-            break
-    clean_hex = clean_str.replace("-", "").replace(" ", "")
-
-    try:
-        blob = bytes.fromhex(clean_hex)
-    except ValueError as exc:
-        raise ValueError("Format karakter lisensi tidak valid (harus hex).") from exc
-
-    if len(blob) < 65:
-        raise ValueError("Ukuran paket lisensi tidak valid.")
-
-
-    salt = blob[:16]
-    iv = blob[16:32]
-    tag = blob[32:64]
-    ciphertext = blob[64:]
-
-    # 1. Derive separate encryption and MAC keys from Master Pepper
-    mac_key = hashlib.pbkdf2_hmac("sha256", _LICENSE_PEPPER, salt + b"MAC", 10000, 32)
-    expected_tag = hmac.new(mac_key, salt + iv + ciphertext, hashlib.sha256).digest()
-
-    if not hmac.compare_digest(tag, expected_tag):
-        raise ValueError("Tanda tangan digital lisensi tidak sah atau data rusak.")
-
-    # 2. Decrypt ciphertext using CTR-keystream
-    enc_key = hashlib.pbkdf2_hmac("sha256", _LICENSE_PEPPER, salt + b"ENC", 10000, 32)
-    keystream = b""
-    counter = 0
-    while len(keystream) < len(ciphertext):
-        keystream += hmac.new(enc_key, iv + counter.to_bytes(4, "big"), hashlib.sha256).digest()
-        counter += 1
-
-    plaintext = bytes(c ^ k for c, k in zip(ciphertext, keystream[: len(ciphertext)]))
-    return json.loads(plaintext.decode("utf-8"))
+def _verify_signed_license_blob(license_key: str) -> dict:
+    """Verify a signed license or activation token before parsing its payload."""
+    clean_key = (license_key or "").strip()
+    if clean_key.startswith(ACTIVATION_PREFIX):
+        payload = decode_signed_payload(
+            clean_key,
+            prefix=ACTIVATION_PREFIX,
+            public_key=_LICENSE_PUBLIC_KEY,
+        )
+        if payload.get("v") != 1 or payload.get("kind") != "activation":
+            raise ValueError("Versi payload aktivasi tidak didukung.")
+        return payload
+    if clean_key.startswith(LICENSE_PREFIX):
+        raise ValueError(
+            "Lisensi ini belum diaktivasi online; hubungkan ke layanan aktivasi."
+        )
+    if not clean_key.startswith(_LICENSE_PREFIX):
+        raise ValueError("Format lisensi tidak didukung; lisensi harus diterbitkan ulang.")
+    payload = decode_signed_payload(
+        clean_key,
+        prefix=_LICENSE_PREFIX,
+        public_key=_LICENSE_PUBLIC_KEY,
+    )
+    if payload.get("v") != 2:
+        raise ValueError("Versi payload lisensi tidak didukung.")
+    return payload
 
 
 def verify_license_key(key_str: str) -> tuple[bool, str, int, str]:
@@ -138,10 +118,30 @@ def verify_license_key(key_str: str) -> tuple[bool, str, int, str]:
         return False, "License Key belum dimasukkan.", 0, ""
 
     try:
-        payload = _decrypt_and_verify_blob(clean_key)
-        lic_mid = payload.get("mid", "").strip().upper()
-        exp_epoch = int(payload.get("exp", 0))
-        lic_type = payload.get("type", "1_MONTH")
+        payload = _verify_signed_license_blob(clean_key)
+        lic_mid = payload.get("mid")
+        exp_epoch = payload.get("exp")
+        issued_epoch = payload.get("iat")
+        lic_type = payload.get("type")
+        is_activation = payload.get("kind") == "activation"
+        if (
+            not isinstance(lic_mid, str)
+            or not isinstance(exp_epoch, int)
+            or isinstance(exp_epoch, bool)
+            or not isinstance(issued_epoch, int)
+            or isinstance(issued_epoch, bool)
+            or not isinstance(lic_type, str)
+            or not lic_mid
+            or exp_epoch <= issued_epoch
+        ):
+            raise ValueError("Payload lisensi tidak valid.")
+        lic_mid = lic_mid.strip().upper()
+        if is_activation:
+            if not isinstance(payload.get("jti"), str) or not payload["jti"]:
+                raise ValueError("Payload aktivasi tidak valid.")
+            normalize_email(payload.get("email", ""))
+        elif not clean_key.startswith(_LICENSE_PREFIX):
+            raise ValueError("Payload aktivasi tidak valid.")
 
         # 1. Verify Machine Binding
         current_mid = get_machine_id()
@@ -174,6 +174,131 @@ def verify_license_key(key_str: str) -> tuple[bool, str, int, str]:
 
     except Exception as exc:
         return False, f"Gagal memverifikasi lisensi: {exc}", 0, ""
+
+
+def _verify_issued_license(email: str, machine_id: str, license_key: str) -> dict:
+    normalized_email = normalize_email(email)
+    payload = decode_signed_payload(
+        license_key.strip(),
+        prefix=LICENSE_PREFIX,
+        public_key=_LICENSE_PUBLIC_KEY,
+    )
+    days_valid = payload.get("days")
+    issued_at = payload.get("iat")
+    if (
+        payload.get("v") != 3
+        or payload.get("email") != normalized_email
+        or payload.get("mid") != machine_id.strip().upper()
+        or not isinstance(days_valid, int)
+        or isinstance(days_valid, bool)
+        or days_valid <= 0
+        or not isinstance(issued_at, int)
+        or isinstance(issued_at, bool)
+        or not isinstance(payload.get("jti"), str)
+        or not payload["jti"]
+    ):
+        raise ValueError("Email, Machine ID, atau payload tidak cocok dengan lisensi.")
+    return payload
+
+
+def activate_license_online(
+    email: str,
+    license_key: str,
+    machine_id: str,
+    *,
+    api_url: str | None = None,
+    ca_bundle: str | None = None,
+) -> str:
+    """Redeem a signed license once and return its signed offline activation token."""
+    normalized_email = normalize_email(email)
+    clean_machine_id = machine_id.strip().upper()
+    issued_payload = _verify_issued_license(
+        normalized_email,
+        clean_machine_id,
+        license_key,
+    )
+    activation_api_url = (api_url or os.environ.get("NOC_LICENSE_API_URL", "")).strip()
+    if not activation_api_url:
+        raise ValueError("URL layanan aktivasi belum dikonfigurasi.")
+
+    parsed_url = urlsplit(activation_api_url)
+    configured_ca_bundle = (
+        ca_bundle
+        or os.environ.get("NOC_LICENSE_API_CA_BUNDLE")
+        or True
+    )
+    local_http_allowed = parsed_url.scheme == "http" and parsed_url.hostname in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+    if (
+        not parsed_url.hostname
+        or parsed_url.username
+        or parsed_url.password
+        or parsed_url.query
+        or parsed_url.fragment
+        or (parsed_url.scheme != "https" and not local_http_allowed)
+    ):
+        raise ValueError(
+            "URL layanan aktivasi harus menggunakan HTTPS; HTTP hanya diizinkan untuk localhost."
+        )
+
+    endpoint = urlunsplit(
+        (
+            parsed_url.scheme,
+            parsed_url.netloc,
+            f"{parsed_url.path.rstrip('/')}/v1/activate",
+            "",
+            "",
+        )
+    )
+    try:
+        response = requests.post(
+            endpoint,
+            json={
+                "email": normalized_email,
+                "license_key": license_key.strip(),
+                "machine_id": clean_machine_id,
+            },
+            timeout=(5, 15),
+            verify=configured_ca_bundle,
+        )
+    except requests.RequestException as exc:
+        raise ValueError(f"Tidak dapat menghubungi layanan aktivasi: {exc}") from exc
+
+    if not response.ok:
+        try:
+            error_detail = response.json().get("detail", "")
+        except (ValueError, AttributeError):
+            error_detail = ""
+        if not isinstance(error_detail, str):
+            error_detail = ""
+        raise ValueError(
+            error_detail or f"Layanan aktivasi menolak permintaan (HTTP {response.status_code})."
+        )
+
+    try:
+        response_data = response.json()
+    except ValueError as exc:
+        raise ValueError("Respons layanan aktivasi tidak valid.") from exc
+
+    if not isinstance(response_data, dict):
+        raise ValueError("Respons layanan aktivasi tidak valid.")
+    activation_token = response_data.get("activation_token")
+    if not isinstance(activation_token, str) or not activation_token:
+        raise ValueError("Respons layanan aktivasi tidak memuat bukti aktivasi.")
+    activation_payload = _verify_signed_license_blob(activation_token)
+    if (
+        activation_payload.get("email") != normalized_email
+        or activation_payload.get("mid") != clean_machine_id
+        or activation_payload.get("jti") != issued_payload.get("jti")
+    ):
+        raise ValueError("Bukti aktivasi tidak cocok dengan permintaan lisensi.")
+    is_valid, message, _, _ = verify_license_key(activation_token)
+    if not is_valid:
+        raise ValueError(message)
+    return activation_token
 
 
 def save_license(key_str: str) -> bool:
@@ -323,7 +448,7 @@ class LicenseActivationDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, initial_msg: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Aktivasi Lisensi Operasional - NOC Tools")
-        self.setFixedSize(540, 580)
+        self.setFixedSize(540, 640)
         self.setWindowFlags(
             Qt.WindowType.Dialog
             | Qt.WindowType.CustomizeWindowHint
@@ -389,12 +514,21 @@ class LicenseActivationDialog(QDialog):
         row_mid.addWidget(btn_copy)
         c_layout.addLayout(row_mid)
 
-        hint_mid = QLabel("Kirimkan Machine ID ini kepada Administrator Jaringan untuk mendapatkan License Key.")
+        hint_mid = QLabel("Berikan Machine ID dan email Anda kepada Administrator untuk penerbitan lisensi.")
         hint_mid.setStyleSheet("color: #64748B; font-size: 10px;")
         hint_mid.setWordWrap(True)
         c_layout.addWidget(hint_mid)
 
         c_layout.addSpacing(6)
+
+        lbl_email = QLabel("EMAIL PENGGUNA:")
+        lbl_email.setObjectName("fieldLabel")
+        c_layout.addWidget(lbl_email)
+
+        self.txt_email = QLineEdit()
+        self.txt_email.setPlaceholderText("nama@perusahaan.com")
+        self.txt_email.setClearButtonEnabled(True)
+        c_layout.addWidget(self.txt_email)
 
         # License Key Input Section
         lbl_key = QLabel("MASUKKAN LICENSE KEY:")
@@ -402,7 +536,7 @@ class LicenseActivationDialog(QDialog):
         c_layout.addWidget(lbl_key)
 
         self.txt_key = QLineEdit()
-        self.txt_key.setPlaceholderText("NOC-LIC1M-XXXXX-XXXXX-XXXXX-...")
+        self.txt_key.setPlaceholderText("NOC-LIC3-...")
         self.txt_key.returnPressed.connect(self._handle_activate)
         c_layout.addWidget(self.txt_key)
 
@@ -425,7 +559,7 @@ class LicenseActivationDialog(QDialog):
         c_layout.addStretch()
 
         # Footer notice
-        footer = QLabel("🛡️ Terenkripsi End-to-End · Hardware-Bound · Offline Validated")
+        footer = QLabel("🛡️ Email-Bound · Hardware-Bound · Aktivasi Online, validasi offline")
         footer.setStyleSheet("color: #475569; font-size: 10px;")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         c_layout.addWidget(footer)
@@ -441,16 +575,33 @@ class LicenseActivationDialog(QDialog):
             self.lbl_status.setVisible(True)
 
     def _handle_activate(self) -> None:
+        email = self.txt_email.text().strip()
         raw_key = self.txt_key.text().strip()
+        if not email:
+            self.lbl_status.setStyleSheet("color: #FB7185;")
+            self.lbl_status.setText("Mohon masukkan email pengguna.")
+            self.lbl_status.setVisible(True)
+            return
         if not raw_key:
             self.lbl_status.setStyleSheet("color: #FB7185;")
             self.lbl_status.setText("Mohon masukkan License Key.")
             self.lbl_status.setVisible(True)
             return
 
-        is_valid, msg, days_left, exp_date = verify_license_key(raw_key)
-        if is_valid:
-            save_license(raw_key)
+        try:
+            activation_token = activate_license_online(
+                email,
+                raw_key,
+                self.machine_id,
+            )
+        except ValueError as error:
+            self.lbl_status.setStyleSheet("color: #FB7185;")
+            self.lbl_status.setText(f"❌ {error}")
+            self.lbl_status.setVisible(True)
+            return
+
+        is_valid, msg, days_left, exp_date = verify_license_key(activation_token)
+        if is_valid and save_license(activation_token):
             self.is_activated = True
             QMessageBox.information(
                 self,
@@ -458,10 +609,12 @@ class LicenseActivationDialog(QDialog):
                 f"<b>Lisensi Berhasil Diaktifkan!</b><br><br>"
                 f"Status: <b>{msg}</b><br>"
                 f"Masa berlaku: <b>{days_left} hari</b> (sampai {exp_date}).<br>"
+                f"Email: <b>{email}</b><br>"
                 f"Perangkat: <b>{self.machine_id}</b>",
             )
             self.accept()
         else:
             self.lbl_status.setStyleSheet("color: #FB7185;")
-            self.lbl_status.setText(f"❌ {msg}")
+            detail = msg if not is_valid else "Lisensi aktif, tetapi tidak dapat disimpan."
+            self.lbl_status.setText(f"❌ {detail}")
             self.lbl_status.setVisible(True)

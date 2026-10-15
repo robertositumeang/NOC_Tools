@@ -16,6 +16,7 @@ dist/
 
 # Testing
 .pytest_cache/
+.pytest_temp/
 .coverage
 
 # IDE
@@ -41,6 +42,27 @@ license_generator*.py
 *license_gen*.py
 *.lic
 .syslock
-PANDUAN_ADMIN_LICENSE.md
-*LICENSE_GUIDE*.md
+noc_tools_admin.py
+auth_admin.py
+cloudflare_api.py
+license_crypto.py
+license_issuer.py
+license_server.py
+cloudflare/
+LICENSE_ACTIVATION_WORKFLOW.md
+test_cloudflare_api.py
+test_noc_tools_admin.py
+test_license_server.py
+test_license_worker.mjs
+test_license_worker_admin.mjs
+NOC Tools Administrator.spec
+VPN/
+
+# Installers & Output
+installer_output/
+*.zip
+*.exe
+Capture_Modem/*.exe
+Capture_Modem/captures/
+Capture_Modem/*.png
 

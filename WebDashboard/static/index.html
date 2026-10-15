@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NOC Command Center – Dashboard</title>
+  <link rel="icon" type="image/x-icon" href="/static/app_icon.ico" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- ApexCharts -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.54.0/dist/apexcharts.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // Dark theme "Midnight Neon"
+            'dark-bg':     '#091526',
+            'dark-card':   '#10213A',
+            'dark-card2':  '#172B48',
+            'dark-border': '#294363',
+            'dark-text':   '#EEF5FF',
+            'dark-muted':  '#A8B9CF',
+            // Light theme "Apple Modern"
+            'light-bg':    '#F2F6FC',
+            'light-card':  '#FFFFFF',
+            'light-card2': '#EAF1F9',
+            'light-border':'#D2DFEE',
+            'light-text':  '#15263B',
+            'light-muted': '#52677F',
+            // Brand
+            'noc-blue':    '#2AA8F2',
+            'noc-blue2':   '#4C83E6',
+            'noc-red':     '#f43f5e',
+            'noc-amber':   '#F4B94E',
+            'noc-green':   '#10b981',
+            'noc-orange':  '#fb923c',
+          },
+          fontFamily: {
+            sans: ['Segoe UI', 'system-ui', 'sans-serif'],
+            mono: ['Consolas', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --app-bg:    #091526;
+      --card-bg:   #10213A;
+      --card-alt:  #172B48;
+      --border:    #294363;
+      --text:      #EEF5FF;
+      --muted:     #A8B9CF;
+      --accent:    #2AA8F2;
+      --secondary: #4C83E6;
+      --signal:    #F4B94E;
+      --alert:     #f43f5e;
+      --green:     #10b981;
+      --orange:    #fb923c;
+    }
+    html[data-theme="light"] {
+      --app-bg:    #F2F6FC;
+      --card-bg:   #FFFFFF;
+      --card-alt:  #EAF1F9;
+      --border:    #D2DFEE;
+      --text:      #15263B;
+      --muted:     #52677F;
+      --accent:    #126FE8;
+      --secondary: #3F67C8;
+      --signal:    #9B6500;
+      --alert:     #B42345;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--app-bg);
+      background-image: url('/static/network_bg.svg');
+      background-repeat: no-repeat;
+      background-position: center bottom;
+      background-size: cover;
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background-color .2s, color .2s;
+    }
+    html[data-theme="light"] body {
+      background-image: url('/static/network_bg_light.svg');
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .header-brand { font-size: 15px; font-weight: 800; letter-spacing: .5px; color: var(--accent); }
+    .header-sub   { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+    .header-clock { font-family: Consolas, monospace; font-size: 14px; color: var(--signal);
+                    background: var(--card-alt); padding: 4px 10px; border-radius: 6px; }
+    .header-spacer { flex: 1; }
+
+    /* ── Theme toggle ── */
+    .theme-btn {
+      display: flex; align-items: center; gap: 2px;
+      background: var(--card-alt); border: 1px solid var(--border);
+      border-radius: 20px; padding: 3px;
+    }
+    .theme-btn button {
+      width: 30px; height: 26px; border-radius: 16px; border: none;
+      font-size: 14px; cursor: pointer; transition: background .15s;
+      background: transparent; color: var(--muted);
+    }
+    .theme-btn button.active {
+      background: var(--accent); color: #fff;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column;
+      padding: 14px 18px 40px; gap: 14px;
+    }
+
+    /* ── KPI Cards ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .kpi-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 4px;
+      position: relative; overflow: hidden; cursor: default;
+      transition: border-color .15s, transform .1s;
+    }
+    .kpi-card.clickable { cursor: pointer; }
+    .kpi-card.clickable:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .kpi-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .kpi-card.blue::before   { background: var(--accent); }
+    .kpi-card.red::before    { background: var(--alert); }
+    .kpi-card.green::before  { background: var(--green); }
+    .kpi-card.amber::before  { background: var(--signal); }
+    .kpi-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .kpi-value { font-size: 32px; font-weight: 800; line-height: 1; }
+    .kpi-sub   { font-size: 11px; color: var(--muted); }
+    .kpi-hint  { font-size: 10px; color: var(--accent); font-weight: 600; }
+
+    /* Aging filter pills */
+    .aging-row {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .aging-pill {
+      padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border);
+      background: var(--card-alt); color: var(--muted);
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: all .15s;
+    }
+    .aging-pill:hover, .aging-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .aging-pill.orange { }
+    .aging-pill.active-orange { background: var(--orange); color: #fff; border-color: var(--orange); }
+    .aging-pill.active-red    { background: var(--alert);  color: #fff; border-color: var(--alert); }
+
+    /* ── Charts row ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 310px;
+    }
+    .chart-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+      display: flex; flex-direction: column; overflow: hidden;
+      min-height: 310px;
+    }
+    .chart-title { font-size: 13px; font-weight: 700; color: var(--text); }
+    .chart-sub   { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+    .chart-wrap  { flex: 1; min-height: 250px; }
+
+    /* ── Bottom Table Card ── */
+    .table-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .medal { font-size: 14px; font-weight: 700; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      height: 26px; background: var(--card-bg); border-top: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 18px; gap: 12px;
+      flex-shrink: 0;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    .status-dot.loading { background: var(--signal); }
+    .status-dot.error   { background: var(--alert); animation: none; }
+    .status-text { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Modal / Dialog ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 16px;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 14px; width: 100%; max-width: 1200px; max-height: 90vh;
+      display: flex; flex-direction: column;
+      transform: translateY(12px); transition: transform .2s;
+      box-shadow: 0 24px 80px rgba(0,0,0,.5);
+    }
+    .modal-overlay.show .modal { transform: translateY(0); }
+    .modal-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 15px; font-weight: 700; flex: 1; }
+    .modal-close { background: none; border: none; color: var(--muted); font-size: 20px;
+                   cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+    .modal-close:hover { color: var(--text); background: var(--card-alt); }
+    .modal-filters {
+      padding: 12px 20px; display: flex; gap: 10px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-body { flex: 1; overflow: auto; padding: 0; }
+    .modal-footer {
+      padding: 12px 20px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+
+    /* Filter inputs */
+    .filter-input, .filter-select {
+      background: var(--card-alt); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 12px; border-radius: 8px;
+      font-size: 12px; outline: none; transition: border-color .15s;
+    }
+    .filter-input:focus, .filter-select:focus { border-color: var(--accent); }
+    .filter-input { min-width: 260px; }
+
+    /* Table */
+    .data-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .data-table th {
+      background: var(--card-alt); color: var(--muted);
+      padding: 9px 12px; text-align: left; font-weight: 700; font-size: 11px;
+      text-transform: uppercase; letter-spacing: .5px;
+      position: sticky; top: 0; border-bottom: 1px solid var(--border);
+      cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    .data-table th:hover { color: var(--accent); }
+    .data-table td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      vertical-align: middle; white-space: nowrap;
+    }
+    .data-table tr:hover td { background: var(--card-alt); }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 700; letter-spacing: .5px;
+    }
+    .badge-open   { background: rgba(244,63,94,.15); color: #f43f5e; }
+    .badge-d1     { background: rgba(16,185,129,.15); color: #10b981; }
+    .badge-d3     { background: rgba(251,191,36,.15); color: #fbbf24; }
+    .badge-d7     { background: rgba(251,146,60,.15); color: #fb923c; }
+    .badge-max    { background: rgba(244,63,94,.15); color: #f43f5e; }
+    .badge-sla-ok      { background: rgba(16,185,129,.15); color: #10b981; }
+    .badge-sla-breach  { background: rgba(244,63,94,.15); color: #f43f5e; font-weight: 800; }
+    .badge-sla-warn    { background: rgba(251,191,36,.15); color: #fbbf24; }
+
+    /* Site ID monospace */
+    .site-id { font-family: Consolas, monospace; font-weight: 700; color: var(--accent); }
+
+    /* Action buttons */
+    .btn {
+      padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s;
+      background: var(--card-alt); color: var(--text);
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-danger  { background: var(--alert); color: #fff; border-color: var(--alert); }
+
+    /* Sync spinner */
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, var(--card-alt) 25%, var(--border) 50%, var(--card-alt) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 6px;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* Pagination info */
+    .page-info { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; }
+
+    /* Report tabs & preview */
+    .tab-btn {
+      padding: 7px 16px; border-radius: 8px 8px 0 0; border: 1px solid var(--border);
+      border-bottom: none; background: var(--card-alt); color: var(--muted);
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .report-preview {
+      width: 100%; min-height: 280px; max-height: 380px;
+      background: #060e1a; color: #a5f3fc; border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px; font-family: Consolas, monospace;
+      font-size: 12px; line-height: 1.6; resize: vertical; outline: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ══════════════════════ -->
+<header class="header">
+  <div>
+    <div class="header-brand">NOC COMMAND CENTER</div>
+    <div class="header-sub">Trouble Ticket Dashboard</div>
+  </div>
+
+  <div class="header-clock" id="clock">00:00:00</div>
+
+  <div class="header-spacer"></div>
+
+  <!-- Operational Reporting & Handover -->
+  <button class="btn btn-primary" onclick="openReportModal('handover')" title="Buat Format Laporan Shift Handover">
+    📋 Handover Shift
+  </button>
+  <button class="btn" onclick="openReportModal('noc')" title="Buat Format Laporan WhatsApp NOC">
+    📡 NOC Report (WA)
+  </button>
+  <button class="btn" onclick="downloadAllTicketsCSV()" title="Ekspor Seluruh Data Tiket ke CSV">
+    📥 Ekspor CSV
+  </button>
+  <button class="btn" onclick="openTicketCheckerApp()" title="Buka Aplikasi NOC Web Ticket Checker">
+    🔍 Ticket Checker
+  </button>
+
+  <!-- Sync button -->
+  <button class="btn" id="btnRefresh" onclick="refreshData(true)" title="Refresh dari Google Sheets">
+    🔄 Refresh DB
+  </button>
+
+  <!-- Settings button -->
+  <button class="btn" onclick="openSettings()" title="Sumber Data">
+    ⚙️ Sumber Data
+  </button>
+
+  <!-- Theme toggle -->
+  <div class="theme-btn" id="themeToggle">
+    <button id="btnLight" onclick="setTheme('light')" title="Light Mode">☀️</button>
+    <button id="btnDark"  onclick="setTheme('dark')"  title="Dark Mode">🌙</button>
+  </div>
+</header>
+
+<!-- ══════════════════════ MAIN ══════════════════════ -->
+<main class="main">
+
+  <!-- KPI Cards row -->
+  <div class="kpi-grid">
+    <!-- Total TT -->
+    <div class="kpi-card blue">
+      <div class="kpi-label">Total Tiket</div>
+      <div class="kpi-value" id="kpiTotal"><span class="skeleton" style="width:60px;height:32px;display:inline-block;"></span></div>
+      <div class="kpi-sub">Semua tiket di database</div>
+    </div>
+
+    <!-- Open TT (clickable) -->
+    <div class="kpi-card red clickable" onclick="openTicketsDialog('ALL')" title="Klik untuk lihat detail">
+      <div class="kpi-label">Open Tickets</div>
+      <div class="kpi-value" style="color:var(--alert)" id="kpiOpen"><span class="skeleton" style="width:50px;height:32px;display:inline-block;"></span></div>
+      <div class="kpi-sub" id="kpiOpenSub">Tiket aktif saat ini</div>
+      <div class="kpi-hint">👉 Klik untuk lihat detail</div>
+    </div>
+
+    <!-- Close TT -->
+    <div class="kpi-card green">
+      <div class="kpi-label">Closed Tickets</div>
+      <div class="kpi-value" style="color:var(--green)" id="kpiClose"><span class="skeleton" style="width:50px;height:32px;display:inline-block;"></span></div>
+      <div class="kpi-sub">Tiket sudah selesai</div>
+    </div>
+
+    <!-- SLA Breached (clickable) -->
+    <div class="kpi-card amber clickable" onclick="openTicketsDialog('SLA_BREACHED')" title="Klik untuk filter SLA">
+      <div class="kpi-label">SLA Breached</div>
+      <div class="kpi-value" style="color:var(--signal)" id="kpiSla"><span class="skeleton" style="width:50px;height:32px;display:inline-block;"></span></div>
+      <div class="kpi-sub">Tiket melewati SLA 4h</div>
+      <div class="kpi-hint" style="color:var(--alert)">👉 Klik untuk filter SLA</div>
+    </div>
+  </div>
+
+  <!-- Aging pills + Open Dialog -->
+  <div class="aging-row">
+    <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Aging:</span>
+    <button class="aging-pill active" id="pillAll"  onclick="openTicketsDialog('ALL')">📋 Total Open: <span id="agAll">—</span></button>
+    <button class="aging-pill"        id="pillD1"   onclick="openTicketsDialog('d1')">&lt;1 Hari: <span id="agD1">—</span></button>
+    <button class="aging-pill"        id="pillD3"   onclick="openTicketsDialog('d3')">1–3 Hari: <span id="agD3">—</span></button>
+    <button class="aging-pill"        id="pillD7"   onclick="openTicketsDialog('d7')">3–7 Hari: <span id="agD7">—</span></button>
+    <button class="aging-pill"        id="pillMax"  onclick="openTicketsDialog('max')">&gt;7 Hari: <span id="agMax">—</span></button>
+    <div class="header-spacer"></div>
+
+    <!-- Package & Province filter -->
+    <select class="filter-select" id="filterPkg" onchange="refreshCharts()">
+      <option value="">Semua paket</option>
+    </select>
+    <select class="filter-select" id="filterProv" onchange="refreshCharts()">
+      <option value="">Semua provinsi</option>
+    </select>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">📈 Tren Volume Tiket</div>
+      <div class="chart-sub">Volume tiket per tanggal (30 hari terakhir)</div>
+      <div class="chart-wrap" id="chartTrend"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">📊 Problem Breakdown</div>
+      <div class="chart-sub">Top 10 penyebab gangguan</div>
+      <div class="chart-wrap" id="chartProblems"></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">🍩 Distribusi Aging Tiket & Kepatuhan SLA</div>
+      <div class="chart-sub">Proporsi durasi tiket open & kepatuhan target SLA 4 jam</div>
+      <div style="display:flex;align-items:center;justify-content:space-around;gap:12px;flex:1;min-height:240px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:180px;height:240px;" id="chartAging"></div>
+        <div style="flex:1;min-width:180px;height:240px;" id="chartSla"></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🗺️ Top Wilayah / Provinsi Gangguan</div>
+      <div class="chart-sub">Perbandingan tiket open vs close di provinsi dengan insiden tertinggi</div>
+      <div class="chart-wrap" id="chartProvinces"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Table: Top Site dengan Tiket Close Terbanyak -->
+  <div class="table-card">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div class="chart-title">🏆 Top Site dengan Tiket Selesai (Close) Terbanyak</div>
+        <div class="chart-sub" style="margin-bottom:0;">Peringkat site yang paling sering mengalami gangguan dan telah selesai ditangani</div>
+      </div>
+      <div class="header-spacer"></div>
+      <select class="filter-select" id="limitTopClosed" onchange="loadTopClosedSites()">
+        <option value="10">Top 10 Site</option>
+        <option value="15" selected>Top 15 Site</option>
+        <option value="25">Top 25 Site</option>
+        <option value="50">Top 50 Site</option>
+      </select>
+    </div>
+
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:48px;text-align:center;">No</th>
+            <th>Site ID</th>
+            <th>Nama Site</th>
+            <th>Provinsi</th>
+            <th>Paket</th>
+            <th style="text-align:center;">Total Tiket Selesai</th>
+            <th>Masalah Terbanyak</th>
+            <th>Terakhir Selesai</th>
+          </tr>
+        </thead>
+        <tbody id="topClosedTbody">
+          <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted);">
+            Memuat data top site...
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- ══════════════════════ STATUS BAR ══════════════════════ -->
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span class="status-text" id="statusText">Memuat data...</span>
+  <div class="header-spacer"></div>
+  <span class="status-text" id="statusCount"></span>
+</div>
+
+<!-- ══════════════════════ MODAL: Open Tickets ══════════════════════ -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">📋 Daftar Tiket Open</div>
+        <div style="font-size:11px;color:var(--muted)">Double-click baris untuk detail timeline site</div>
+      </div>
+      <span id="modalBadge" style="background:var(--alert);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;"></span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-filters">
+      <input class="filter-input" id="modalSearch" placeholder="🔍 Cari site ID, nama, ticket ID, problem..." oninput="filterTable()" />
+      <select class="filter-select" id="modalAging" onchange="filterTable()">
+        <option value="">Semua Aging</option>
+        <option value="d1">&lt; 1 Hari</option>
+        <option value="d3">1–3 Hari</option>
+        <option value="d7">3–7 Hari</option>
+        <option value="max">&gt;7 Hari</option>
+        <option value="SLA_BREACHED">SLA Breached</option>
+      </select>
+      <select class="filter-select" id="modalPkg" onchange="filterTable()">
+        <option value="">Semua Paket</option>
+      </select>
+      <select class="filter-select" id="modalProv" onchange="filterTable()">
+        <option value="">Semua Provinsi</option>
+      </select>
+    </div>
+    <div class="modal-body">
+      <table class="data-table" id="ticketTable">
+        <thead>
+          <tr>
+            <th onclick="sortTable('no')">No ↕</th>
+            <th onclick="sortTable('dateQuery')">Tanggal ↕</th>
+            <th onclick="sortTable('ticketId')">Ticket ID ↕</th>
+            <th onclick="sortTable('siteId')">Site ID ↕</th>
+            <th onclick="sortTable('siteName')">Nama Site ↕</th>
+            <th onclick="sortTable('package')">Paket ↕</th>
+            <th onclick="sortTable('problem')">Problem ↕</th>
+            <th onclick="sortTable('agingBucket')">Aging ↕</th>
+            <th onclick="sortTable('slaStatus')">SLA (4h) ↕</th>
+          </tr>
+        </thead>
+        <tbody id="ticketBody">
+          <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);">Memuat data tiket...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <span class="page-info" id="modalInfo">—</span>
+      <div class="header-spacer"></div>
+      <button class="btn" onclick="prevPage()">◀ Sebelumnya</button>
+      <span class="page-info" id="pageInfo">Halaman 1</span>
+      <button class="btn" onclick="nextPage()">Berikutnya ▶</button>
+      <button class="btn btn-primary" onclick="exportCSV()">📥 Ekspor CSV</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ MODAL: Reporting & Handover ══════════════════════ -->
+<div class="modal-overlay" id="reportModalOverlay">
+  <div class="modal" style="max-width:780px;">
+    <div class="modal-header">
+      <div class="modal-title" id="reportModalTitle">📋 Laporan Operasional & Handover Shift</div>
+      <button class="modal-close" onclick="closeReportModal()">✕</button>
+    </div>
+
+    <!-- Tab Selector -->
+    <div style="padding:12px 20px 0;display:flex;gap:8px;border-bottom:1px solid var(--border);background:var(--card-alt);">
+      <button class="tab-btn active" id="tabBtnHandover" onclick="switchReportTab('handover')">
+        📋 Shift Handover
+      </button>
+      <button class="tab-btn" id="tabBtnNoc" onclick="switchReportTab('noc')">
+        📡 NOC Report (WhatsApp)
+      </button>
+    </div>
+
+    <!-- Filters & Form -->
+    <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Wilayah / Area</label>
+          <select class="filter-select" id="reportArea" onchange="updateReportPreview()">
+            <option value="all">🌐 Semua Area (NOC ALL AREA)</option>
+            <option value="maluku">🏝️ Maluku (Paket 10)</option>
+            <option value="papua">⛰️ Papua (Paket 11)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Jam Laporan (WIB)</label>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <select class="filter-select" id="reportTimeQuick" onchange="setQuickReportTime(this.value)">
+              <option value="auto">⏱️ Otomatis (Sesuai Jam)</option>
+              <option value="06:00">06:00 WIB</option>
+              <option value="12:00">12:00 WIB</option>
+              <option value="18:00">18:00 WIB</option>
+              <option value="00:00">00:00 WIB</option>
+              <option value="custom">Kustom</option>
+            </select>
+            <input class="filter-input" id="reportTimeInput" style="width:75px;text-align:center;display:none;" placeholder="12:00" oninput="updateReportPreview()" />
+          </div>
+        </div>
+
+        <div id="handoverOfficersGroup" style="display:flex;gap:8px;flex:1;min-width:0;max-width:320px;">
+          <div style="flex:1;min-width:0;">
+            <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Petugas Pagi</label>
+            <input class="filter-input" id="officerPagi" style="width:100%;min-width:0;box-sizing:border-box;" placeholder="Nama teknisi pagi..." oninput="updateReportPreview()" />
+          </div>
+          <div style="flex:1;min-width:0;">
+            <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Petugas Malam</label>
+            <input class="filter-input" id="officerMalam" style="width:100%;min-width:0;box-sizing:border-box;" placeholder="Nama teknisi malam..." oninput="updateReportPreview()" />
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="reportIncludeList" onchange="updateReportPreview()" style="cursor:pointer;" />
+        <label for="reportIncludeList" style="font-size:11px;color:var(--text);cursor:pointer;">
+          Sertakan rincian daftar nama site open, kendala & durasi
+        </label>
+      </div>
+    </div>
+
+    <!-- Preview Area -->
+    <div style="padding:14px 20px;flex:1;display:flex;flex-direction:column;gap:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Preview Teks Format Pesan:</span>
+        <span id="reportCharCount" style="font-size:10px;color:var(--muted);font-family:Consolas,monospace;">0 karakter</span>
+      </div>
+      <textarea class="report-preview" id="reportPreviewText" placeholder="Membuat draft laporan..."></textarea>
+      <div id="copyToast" style="display:none;font-size:11px;color:var(--green);font-weight:700;">
+        ✅ Teks laporan berhasil disalin ke clipboard!
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="modal-footer" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn" onclick="closeReportModal()">Tutup</button>
+      <div class="header-spacer"></div>
+      <button class="btn" onclick="downloadReportTxt()" title="Simpan sebagai file teks">
+        📥 Unduh .txt
+      </button>
+      <button class="btn" style="background:#065f46;color:#6ee7b7;border-color:#059669;font-weight:700;" onclick="openReportWhatsApp('web')" title="Buka WhatsApp Web">
+        🌐 WhatsApp Web
+      </button>
+      <button class="btn" style="background:#1e3a5f;color:#7dd3fc;border-color:#0284c7;font-weight:700;" onclick="openReportWhatsApp('app')" title="Buka Aplikasi WhatsApp Desktop">
+        💬 WhatsApp App
+      </button>
+      <button class="btn btn-primary" onclick="copyReportText()">
+        📋 Salin Teks
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ MODAL: Settings ══════════════════════ -->
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">⚙️ Sumber Data</div>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">
+          URL Google Spreadsheet
+        </label>
+        <input class="filter-input" id="urlInput" style="width:100%;" placeholder="https://docs.google.com/spreadsheets/d/..." />
+      </div>
+      <div style="font-size:11px;color:var(--muted);">
+        Pastikan Google Spreadsheet dibagikan sebagai <strong style="color:var(--accent);">Anyone with the link — Viewer</strong>.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" onclick="closeSettings()">Batal</button>
+        <button class="btn btn-primary" onclick="saveSettings()">💾 Simpan & Muat Ulang</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ APP SCRIPT ══════════════════════ -->
+<script src="/static/app.js"></script>
+
+</body>
+</html>
+

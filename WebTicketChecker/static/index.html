@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NOC Command Center – Ticket Checker</title>
+<link rel="icon" type="image/x-icon" href="/static/app_icon.ico" />
+<style>
+/* ── CSS Variables ───────────────────────────────────────────── */
+:root {
+  --app-bg:#091526; --card-bg:#10213A; --card-alt:#172B48;
+  --border:#294363; --text:#EEF5FF; --muted:#A8B9CF;
+  --accent:#2AA8F2; --secondary:#4C83E6; --signal:#F4B94E;
+  --alert:#f43f5e; --green:#10b981; --orange:#fb923c;
+  --radius:12px; --radius-sm:8px;
+  --shadow:0 4px 24px rgba(0,0,0,.45);
+  --transition:all .2s ease;
+}
+html[data-theme="light"] {
+  --app-bg:#F2F6FC; --card-bg:#FFFFFF; --card-alt:#EAF1F9;
+  --border:#D2DFEE; --text:#15263B; --muted:#52677F;
+  --accent:#126FE8; --secondary:#3F67C8; --signal:#9B6500;
+  --alert:#B42345; --green:#0a7c5c; --orange:#c45e08;
+  --shadow:0 4px 24px rgba(100,130,180,.15);
+}
+
+/* ── Reset / Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+body {
+  background-color: var(--app-bg);
+  background-image: url('/static/network_bg.svg');
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: cover;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  transition: background-color .3s, color .3s;
+}
+html[data-theme="light"] body {
+  background-image: url('/static/network_bg_light.svg');
+}
+a { color:var(--accent); text-decoration:none; }
+button { cursor:pointer; font-family:inherit; }
+
+/* ── Layout ────────────────────────────────────────────────────── */
+.header {
+  background:var(--card-bg); border-bottom:1px solid var(--border);
+  padding:12px 24px; display:flex; align-items:center; gap:12px;
+  position:sticky; top:0; z-index:100;
+  box-shadow:0 2px 12px rgba(0,0,0,.25);
+}
+.header-brand { display:flex; flex-direction:column; }
+.header-brand .title {
+  font-size:17px; font-weight:700; letter-spacing:.5px;
+  color:var(--accent);
+}
+.header-brand .subtitle {
+  font-size:10px; font-weight:600; letter-spacing:2px;
+  color:var(--muted); text-transform:uppercase;
+}
+.header-dot {
+  width:8px; height:8px; border-radius:50%; background:var(--green);
+  box-shadow:0 0 8px var(--green); flex-shrink:0;
+  animation:pulse-dot 2s infinite;
+}
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+.header-spacer { flex:1; }
+.clock {
+  font-size:13px; font-weight:600; font-variant-numeric:tabular-nums;
+  color:var(--muted); letter-spacing:.5px;
+}
+.theme-btn {
+  background:var(--card-alt); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:6px 12px;
+  color:var(--text); font-size:13px; font-weight:500;
+  transition:var(--transition);
+}
+.theme-btn:hover { background:var(--border); }
+
+/* ── Content ───────────────────────────────────────────────────── */
+.content { padding:24px; max-width:1320px; margin:0 auto; }
+
+/* ── Section Headers ──────────────────────────────────────────── */
+.step-label {
+  font-size:11px; font-weight:700; letter-spacing:1.5px;
+  text-transform:uppercase; color:var(--muted); margin-bottom:10px;
+  display:flex; align-items:center; gap:8px;
+}
+.step-label .step-num {
+  width:20px; height:20px; border-radius:50%;
+  background:var(--accent); color:#fff;
+  font-size:10px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────── */
+.card {
+  background:var(--card-bg); border:1px solid var(--border);
+  border-radius:var(--radius); padding:18px 20px;
+  transition:border-color .2s;
+}
+.card-row { display:grid; gap:16px; }
+.card-row-2 { grid-template-columns:1fr 1fr; }
+.card-row-3 { grid-template-columns:repeat(3,1fr); }
+
+/* ── DB Status Card ────────────────────────────────────────────── */
+.db-card { display:flex; align-items:center; gap:16px; }
+.db-icon {
+  width:48px; height:48px; border-radius:var(--radius-sm);
+  background:var(--card-alt); border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; flex-shrink:0;
+}
+.db-info { flex:1; }
+.db-info .db-name { font-size:13px; font-weight:600; color:var(--muted); }
+.db-info .db-status { font-size:15px; font-weight:700; margin-top:2px; }
+.db-info .db-count { font-size:12px; color:var(--muted); margin-top:2px; }
+.status-loaded  { color:var(--green); }
+.status-loading { color:var(--signal); }
+.status-error   { color:var(--alert); }
+.status-idle    { color:var(--muted); }
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.btn {
+  border:none; border-radius:var(--radius-sm);
+  padding:8px 16px; font-size:13px; font-weight:600;
+  transition:var(--transition); display:inline-flex;
+  align-items:center; gap:6px;
+}
+.btn-primary {
+  background:var(--accent); color:#fff;
+}
+.btn-primary:hover:not(:disabled) { filter:brightness(1.15); }
+.btn-primary:disabled {
+  opacity:.4; cursor:not-allowed;
+}
+.btn-outline {
+  background:transparent; border:1px solid var(--border);
+  color:var(--text);
+}
+.btn-outline:hover { background:var(--card-alt); }
+.btn-success {
+  background:var(--green); color:#fff;
+}
+.btn-success:hover { filter:brightness(1.1); }
+.btn-sm { padding:5px 11px; font-size:12px; }
+
+/* ── Upload Cards ──────────────────────────────────────────────── */
+.upload-card {
+  background:var(--card-bg); border:2px dashed var(--border);
+  border-radius:var(--radius); padding:24px 20px;
+  text-align:center; cursor:pointer;
+  transition:border-color .2s, background .2s;
+  position:relative;
+}
+.upload-card:hover { border-color:var(--accent); background:var(--card-alt); }
+.upload-card.loaded { border-color:var(--green); border-style:solid; }
+.upload-card.dragging { border-color:var(--accent); background:var(--card-alt); }
+.upload-icon { font-size:32px; margin-bottom:10px; }
+.upload-title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:4px; }
+.upload-sub { font-size:11px; color:var(--muted); }
+.upload-filename {
+  margin-top:10px; font-size:12px; font-weight:600;
+  color:var(--green); background:rgba(16,185,129,.1);
+  border-radius:6px; padding:4px 10px; display:inline-block;
+}
+.upload-count { font-size:11px; color:var(--muted); margin-top:4px; }
+input[type="file"] { display:none; }
+
+/* ── Run area ──────────────────────────────────────────────────── */
+.run-area {
+  display:flex; align-items:center; gap:12px;
+  padding:16px 20px; background:var(--card-bg);
+  border:1px solid var(--border); border-radius:var(--radius);
+}
+.run-area .run-hint { font-size:12px; color:var(--muted); flex:1; }
+
+.btn-run {
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  color:#fff; border:none; border-radius:var(--radius-sm);
+  padding:10px 24px; font-size:14px; font-weight:700;
+  transition:var(--transition); display:flex; align-items:center; gap:8px;
+}
+.btn-run:hover:not(:disabled) { filter:brightness(1.12); transform:translateY(-1px); }
+.btn-run:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+
+/* ── KPI Cards ─────────────────────────────────────────────────── */
+.kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+.kpi-card {
+  background:var(--card-bg); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px 18px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.kpi-label { font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+.kpi-value { font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; }
+.kpi-sub   { font-size:11px; color:var(--muted); }
+.kpi-total  { border-top:3px solid var(--accent); }
+.kpi-down   { border-top:3px solid var(--alert); }
+.kpi-unmon  { border-top:3px solid var(--signal); }
+.kpi-ok     { border-top:3px solid var(--green); }
+.kpi-total .kpi-value  { color:var(--accent); }
+.kpi-down  .kpi-value  { color:var(--alert); }
+.kpi-unmon .kpi-value  { color:var(--signal); }
+.kpi-ok    .kpi-value  { color:var(--green); }
+
+/* ── Filter Row ────────────────────────────────────────────────── */
+.filter-row {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.filter-tabs { display:flex; gap:6px; }
+.filter-tab {
+  background:var(--card-alt); border:1px solid var(--border);
+  border-radius:6px; padding:6px 14px;
+  font-size:12px; font-weight:600; color:var(--muted);
+  cursor:pointer; transition:var(--transition);
+}
+.filter-tab.active {
+  background:var(--accent); border-color:var(--accent); color:#fff;
+}
+.filter-tab:hover:not(.active) { background:var(--border); color:var(--text); }
+.filter-input {
+  flex:1; min-width:200px;
+  background:var(--card-alt); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:7px 12px;
+  color:var(--text); font-size:13px; font-family:inherit;
+  transition:border-color .2s;
+}
+.filter-input:focus { outline:none; border-color:var(--accent); }
+.filter-input::placeholder { color:var(--muted); }
+.gap-count { font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
+
+/* ── Table ─────────────────────────────────────────────────────── */
+.table-wrapper {
+  background:var(--card-bg); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden;
+}
+.data-table { width:100%; border-collapse:collapse; }
+.data-table thead th {
+  background:var(--card-alt); padding:10px 12px;
+  font-size:11px; font-weight:700; letter-spacing:.5px;
+  text-transform:uppercase; color:var(--muted);
+  text-align:left; border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.data-table tbody tr {
+  border-bottom:1px solid var(--border);
+  transition:background .15s;
+}
+.data-table tbody tr:last-child { border-bottom:none; }
+.data-table tbody tr:hover { background:var(--card-alt); }
+.data-table tbody tr:nth-child(even) { background:rgba(255,255,255,.02); }
+.data-table tbody tr:nth-child(even):hover { background:var(--card-alt); }
+.data-table td { padding:10px 12px; font-size:13px; vertical-align:middle; }
+.td-no { width:44px; text-align:center; font-weight:600; color:var(--muted); }
+.td-siteid { font-family:'Consolas','Courier New',monospace; color:var(--accent); font-weight:600; }
+
+/* ── Badges ────────────────────────────────────────────────────── */
+.badge {
+  display:inline-flex; align-items:center;
+  padding:2px 8px; border-radius:4px;
+  font-size:11px; font-weight:700; letter-spacing:.4px;
+  text-transform:uppercase; white-space:nowrap;
+}
+.badge-down    { background:rgba(244,63,94,.15);  color:var(--alert); }
+.badge-unmon   { background:rgba(244,185,78,.15); color:var(--signal); }
+.badge-notdb   { background:rgba(244,63,94,.12);  color:var(--alert); }
+.badge-close   { background:rgba(244,185,78,.12); color:var(--signal); }
+.badge-ok      { background:rgba(16,185,129,.12); color:var(--green); }
+
+/* ── Spinner ───────────────────────────────────────────────────── */
+.spinner {
+  display:inline-block; width:14px; height:14px;
+  border:2px solid var(--border); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .7s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── Status bar ────────────────────────────────────────────────── */
+.status-bar {
+  position:fixed; bottom:0; left:0; right:0;
+  background:var(--card-bg); border-top:1px solid var(--border);
+  padding:5px 20px; display:flex; align-items:center; gap:10px;
+  font-size:11px; color:var(--muted); z-index:200;
+}
+.status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); }
+#status-msg { flex:1; }
+
+/* ── Section spacing ───────────────────────────────────────────── */
+.section { margin-bottom:20px; }
+
+/* ── Utility ───────────────────────────────────────────────────── */
+.hidden { display:none !important; }
+.mt-4 { margin-top:4px; }
+.mt-8 { margin-top:8px; }
+.mt-12{ margin-top:12px; }
+
+/* ── Empty state ───────────────────────────────────────────────── */
+.empty-state {
+  text-align:center; padding:40px 20px;
+  color:var(--muted); font-size:13px;
+}
+.empty-state .empty-icon { font-size:36px; margin-bottom:10px; }
+
+/* ── Modal / Dialog ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 16px;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-overlay.show { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; width: 100%; max-width: 860px; max-height: 85vh;
+  display: flex; flex-direction: column;
+  transform: translateY(12px); transition: transform .2s;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+.modal-overlay.show .modal { transform: translateY(0); }
+.modal-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 15px; font-weight: 700; flex: 1; color: var(--accent); }
+.modal-close { background: none; border: none; color: var(--muted); font-size: 20px;
+               cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.modal-close:hover { color: var(--text); background: var(--card-alt); }
+.modal-body { flex: 1; overflow: auto; padding: 16px 20px; }
+.modal-footer {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: flex-end;
+}
+
+@media(max-width:900px){
+  .kpi-grid { grid-template-columns:repeat(2,1fr); }
+  .card-row-2 { grid-template-columns:1fr; }
+}
+@media(max-width:600px){
+  .kpi-grid { grid-template-columns:1fr 1fr; }
+}
+
+/* ── Checkbox column ────────────────────────────────────────────── */
+.td-check { width:36px; text-align:center; }
+.td-check input[type="checkbox"] {
+  display: inline-block !important; /* override display:none from input[type=file] */
+  width: 15px; height: 15px;
+  accent-color: var(--accent); cursor: pointer;
+}
+.data-table thead th.th-check input[type="checkbox"] {
+  display: inline-block !important;
+  width: 15px; height: 15px;
+  accent-color: var(--accent); cursor: pointer;
+}
+
+/* ── Action toolbar (write to sheets) ──────────────────────────── */
+.action-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: rgba(42,168,242,.06);
+  border: 1px solid rgba(42,168,242,.25);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.action-toolbar .sel-info {
+  font-size: 12px; font-weight: 600; color: var(--accent); flex: 1;
+}
+.btn-sheets {
+  background: linear-gradient(135deg,#0f9d58,#34a853);
+  color: #fff; border: none; border-radius: var(--radius-sm);
+  padding: 7px 16px; font-size: 13px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: var(--transition); cursor: pointer;
+}
+.btn-sheets:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-sheets:disabled { opacity: .4; cursor: not-allowed; }
+.btn-tsv {
+  background: var(--card-alt); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius-sm);
+  padding: 7px 14px; font-size: 12px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: var(--transition); cursor: pointer;
+}
+.btn-tsv:hover { background: var(--border); }
+.btn-configure {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); border-radius: var(--radius-sm);
+  padding: 6px 12px; font-size: 11px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: var(--transition); cursor: pointer;
+}
+.btn-configure:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Sheets Modal specific ──────────────────────────────────────── */
+.sheets-modal { max-width: 680px; }
+.setup-steps { counter-reset: step; margin-top: 12px; }
+.setup-step {
+  display: flex; gap: 14px; margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--card-alt); border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.step-circle {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 13px; font-weight: 800; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-content { flex: 1; }
+.step-content strong { font-size: 13px; color: var(--text); }
+.step-content p { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+.step-content code {
+  font-family: Consolas, monospace; font-size: 11px;
+  background: rgba(42,168,242,.1); color: var(--accent);
+  padding: 1px 5px; border-radius: 4px;
+}
+.url-input-row { display: flex; gap: 8px; margin-top: 8px; }
+.url-input-row input {
+  flex: 1; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 12px;
+  color: var(--text); font-size: 12px; font-family: Consolas, monospace;
+  transition: border-color .2s;
+}
+.url-input-row input:focus { outline: none; border-color: var(--accent); }
+.url-input-row input::placeholder { color: var(--muted); }
+.sheets-status-box {
+  margin-top: 12px; padding: 10px 14px;
+  border-radius: var(--radius-sm); font-size: 12px;
+  display: none;
+}
+.sheets-status-box.success { background: rgba(16,185,129,.1); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+.sheets-status-box.error   { background: rgba(244,63,94,.1);  color: var(--alert); border: 1px solid rgba(244,63,94,.3); }
+.sheets-status-box.info    { background: rgba(42,168,242,.1); color: var(--accent); border: 1px solid rgba(42,168,242,.3); }
+.gas-snippet {
+  background: var(--app-bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px; margin-top: 8px;
+  font-family: Consolas, monospace; font-size: 11px;
+  color: var(--muted); white-space: pre; overflow-x: auto;
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-dot"></div>
+  <div class="header-brand">
+    <span class="title">NOC COMMAND CENTER</span>
+    <span class="subtitle">Ticket Checker Gap Audit</span>
+  </div>
+  <div class="header-spacer"></div>
+  <span class="clock" id="clock">--:--:--</span>
+  <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">☀ Light</button>
+</header>
+
+<div class="content" style="padding-bottom:48px;">
+
+  <!-- STEP 1 — DB STATUS -->
+  <div class="section">
+    <div class="step-label">
+      <span class="step-num">1</span>
+      Database TT
+    </div>
+    <div class="card">
+      <div class="db-card">
+        <div class="db-icon">🗄️</div>
+        <div class="db-info">
+          <div class="db-name">Google Sheets — Trouble Ticket Database</div>
+          <div class="db-status" id="dbStatusText">
+            <span class="spinner"></span> Memuat...
+          </div>
+          <div class="db-count" id="dbCountText">Menghubungkan ke database...</div>
+        </div>
+        <button class="btn btn-outline btn-sm" id="refreshDbBtn" onclick="refreshDb()">
+          🔄 Refresh DB
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 — UPLOAD -->
+  <div class="section">
+    <div class="step-label">
+      <span class="step-num">2</span>
+      Upload File Incident
+    </div>
+    <div class="card-row card-row-2">
+
+      <!-- Site Down -->
+      <div class="upload-card" id="downCard"
+           onclick="triggerUpload('down')"
+           ondragover="handleDragOver(event,'down')"
+           ondragleave="handleDragLeave('down')"
+           ondrop="handleDrop(event,'down')">
+        <input type="file" id="downInput" accept=".xlsx,.xlsm,.xls"
+               onchange="handleFileChange('down', this)" />
+        <div class="upload-icon" id="downIcon">📡</div>
+        <div class="upload-title">Site Down</div>
+        <div class="upload-sub">Klik atau drag & drop file .xlsx di sini</div>
+        <div id="downFilename" class="hidden">
+          <div class="upload-filename" id="downFnText"></div>
+          <div class="upload-count" id="downCountText"></div>
+        </div>
+      </div>
+
+      <!-- Site Unmonitor -->
+      <div class="upload-card" id="unmonCard"
+           onclick="triggerUpload('unmon')"
+           ondragover="handleDragOver(event,'unmon')"
+           ondragleave="handleDragLeave('unmon')"
+           ondrop="handleDrop(event,'unmon')">
+        <input type="file" id="unmonInput" accept=".xlsx,.xlsm,.xls"
+               onchange="handleFileChange('unmon', this)" />
+        <div class="upload-icon" id="unmonIcon">🖥️</div>
+        <div class="upload-title">Site Unmonitor</div>
+        <div class="upload-sub">Klik atau drag & drop file .xlsx di sini</div>
+        <div id="unmonFilename" class="hidden">
+          <div class="upload-filename" id="unmonFnText"></div>
+          <div class="upload-count" id="unmonCountText"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- STEP 3 — RUN -->
+  <div class="section">
+    <div class="step-label">
+      <span class="step-num">3</span>
+      Jalankan Pengecekan
+    </div>
+    <div class="run-area">
+      <div class="run-hint" id="runHint">
+        Pastikan DB sudah termuat dan minimal satu file incident sudah diupload.
+      </div>
+      <button class="btn btn-run" id="exportCsvBtn" onclick="exportGaps('csv')" style="display:none;background:var(--card-alt);border-color:var(--accent);color:var(--accent);">
+        📥 Export CSV (.csv)
+      </button>
+      <button class="btn btn-run" id="exportBtn" onclick="exportGaps('xlsx')" style="display:none;background:#059669;border-color:#10b981;color:#fff;">
+        📊 Export Excel (.xlsx)
+      </button>
+      <button class="btn btn-run" id="runBtn" onclick="runCheck()" disabled>
+        ▶ Jalankan Pengecekan
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI SUMMARY -->
+  <div class="section hidden" id="kpiSection">
+    <div class="step-label">
+      <span class="step-num">📊</span>
+      Hasil Pengecekan
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-total">
+        <div class="kpi-label">Total Dicek</div>
+        <div class="kpi-value" id="kpiTotal">—</div>
+        <div class="kpi-sub">Site dari file incident</div>
+      </div>
+      <div class="kpi-card kpi-down">
+        <div class="kpi-label">Belum Open TT — Down</div>
+        <div class="kpi-value" id="kpiDown">—</div>
+        <div class="kpi-sub">Site Down tanpa tiket aktif</div>
+      </div>
+      <div class="kpi-card kpi-unmon">
+        <div class="kpi-label">Belum Open TT — Unmon</div>
+        <div class="kpi-value" id="kpiUnmon">—</div>
+        <div class="kpi-sub">Unmonitor tanpa tiket aktif</div>
+      </div>
+      <div class="kpi-card kpi-ok">
+        <div class="kpi-label">Sudah Open TT di DB</div>
+        <div class="kpi-value" id="kpiOk">—</div>
+        <div class="kpi-sub">Tiket aktif ditemukan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILTER + TABLE -->
+  <div class="section hidden" id="tableSection">
+
+    <!-- Filter Row -->
+    <div class="filter-row" style="margin-bottom:12px;">
+      <div class="filter-tabs">
+        <button class="filter-tab active" onclick="setFilter('all')" data-filter="all">
+          Semua Gap
+        </button>
+        <button class="filter-tab" onclick="setFilter('down')" data-filter="down">
+          Site Down
+        </button>
+        <button class="filter-tab" onclick="setFilter('unmon')" data-filter="unmon">
+          Site Unmonitor
+        </button>
+      </div>
+      <input class="filter-input" type="text" id="searchInput"
+             placeholder="🔍  Cari Site ID, nama, atau provinsi..."
+             oninput="onSearch(this.value)" />
+      <span class="gap-count" id="gapCount">0 site gap</span>
+    </div>
+
+    <!-- Action Toolbar: Write to Sheets -->
+    <div class="action-toolbar" id="actionToolbar">
+      <span class="sel-info" id="selInfo">☑ 0 dari 0 site dipilih</span>
+      <button class="btn-tsv" id="copyTsvBtn" onclick="copyTsvForPaste()" disabled>
+        📋 Salin Siap Paste
+      </button>
+      <button class="btn-sheets" id="writeToSheetsBtn" onclick="writeToGoogleSheets()" disabled>
+        <span>📝</span> Tulis ke Google Sheets (Database TT)
+      </button>
+      <button class="btn-configure" onclick="openSheetsModal()">
+        ⚙ Konfigurasi
+      </button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="th-check td-check">
+              <input type="checkbox" id="checkAllGaps" onchange="toggleAllGaps(this.checked)" title="Pilih semua" />
+            </th>
+            <th class="td-no">No</th>
+            <th>Tipe Insiden</th>
+            <th>Site ID</th>
+            <th>Site Name</th>
+            <th>Provinsi</th>
+            <th>Kab / Kota</th>
+            <th>Ticket ID BAKTI</th>
+            <th>Status DB Terakhir</th>
+            <th>Durasi</th>
+            <th>Detail DB</th>
+          </tr>
+        </thead>
+        <tbody id="gapTbody">
+          <tr><td colspan="11">
+            <div class="empty-state">
+              <div class="empty-icon">📋</div>
+              <div>Belum ada data. Jalankan pengecekan terlebih dahulu.</div>
+            </div>
+          </td></tr>
+        </tbody>
+      </table>
+      <!-- Pagination -->
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--border);" id="paginationArea"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL: History Tiket DB -->
+<div class="modal-overlay" id="historyModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="histModalTitle">📋 Riwayat Tiket Database</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;" id="histModalSub">Riwayat tiket yang tercatat di Google Sheets</div>
+      </div>
+      <button class="modal-close" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="histContent">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date Query</th>
+              <th>Ticket ID</th>
+              <th>Status</th>
+              <th>Problem</th>
+              <th>Close Time</th>
+            </tr>
+          </thead>
+          <tbody id="histTbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeHistoryModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Google Sheets Sync -->
+<div class="modal-overlay" id="sheetsSyncModal">
+  <div class="modal sheets-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">📊 Tulis ke Google Sheets — Database TT</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Konfigurasi Google Apps Script untuk menulis data langsung ke spreadsheet</div>
+      </div>
+      <button class="modal-close" onclick="closeSheetsModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Status box -->
+      <div class="sheets-status-box" id="sheetsStatusBox"></div>
+
+      <!-- Option A: Apps Script -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">
+          🔗 Opsi A — Otomatis via Google Apps Script
+        </div>
+        <div class="setup-steps">
+
+          <div class="setup-step">
+            <div class="step-circle">1</div>
+            <div class="step-content">
+              <strong>Buka Google Spreadsheet Database TT</strong>
+              <p>Pilih menu <code>Extensions</code> → <code>Apps Script</code> untuk membuka editor script.</p>
+            </div>
+          </div>
+
+          <div class="setup-step">
+            <div class="step-circle">2</div>
+            <div class="step-content">
+              <strong>Tempelkan kode berikut ke editor</strong>
+              <p>Salin seluruh kode di bawah dan tempelkan ke file <code>Code.gs</code>:</p>
+              <div class="gas-snippet" id="gasSnippet">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var rows = data.rows || [];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Database TT");
+    if (!sheet) return ContentService.createTextOutput(
+      JSON.stringify({ok:false,error:"Sheet 'Database TT' tidak ditemukan"}))
+      .setMimeType(ContentService.MimeType.JSON);
+
+    // Temukan baris terakhir berisi data di kolom C (Site ID)
+    var lastRow = sheet.getLastRow();
+    var startRow = lastRow + 1;
+
+    // Kolom yang akan diisi (1-indexed)
+    var COL = { siteId:3, alarmId:13, alarmTitle:14, ticketId:15,
+                ticketDur:16, stateCond:17, dateDown:19,
+                status:24, admState1:25, admState2:26, opState:27 };
+
+    rows.forEach(function(row, i) {
+      var r = startRow + i;
+      sheet.getRange(r, COL.siteId).setValue(row["Site ID"] || "");
+      sheet.getRange(r, COL.alarmId).setValue(row["Alarm ID"] || "");
+      sheet.getRange(r, COL.alarmTitle).setValue(row["Alarm Title"] || "");
+      sheet.getRange(r, COL.ticketId).setValue(row["Ticket ID"] || "");
+      sheet.getRange(r, COL.ticketDur).setValue(row["Ticket Duration"] || "");
+      sheet.getRange(r, COL.stateCond).setValue(row["State Condition"] || "");
+      sheet.getRange(r, COL.dateDown).setValue(row["Date Time Site Down"] || "");
+      sheet.getRange(r, COL.status).setValue(row["Status"] || "");
+      sheet.getRange(r, COL.admState1).setValue(row["Administrative State 1"] || "");
+      sheet.getRange(r, COL.admState2).setValue(row["Administrative State 2"] || "");
+      sheet.getRange(r, COL.opState).setValue(row["Operation State"] || "");
+    });
+
+    return ContentService.createTextOutput(
+      JSON.stringify({ok:true,written:rows.length,startRow:startRow}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(
+      JSON.stringify({ok:false,error:err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</div>
+              <button class="btn-configure" onclick="copyGasCode()" style="margin-top:6px;">📋 Salin Kode</button>
+            </div>
+          </div>
+
+          <div class="setup-step">
+            <div class="step-circle">3</div>
+            <div class="step-content">
+              <strong>Deploy sebagai Web App</strong>
+              <p>Klik <code>Deploy</code> → <code>New deployment</code> → pilih tipe <code>Web app</code>.<br/>
+              Set <code>Execute as: Me</code> dan <code>Who has access: Anyone</code>.<br/>
+              Klik <code>Deploy</code> dan <strong>salin URL</strong> yang muncul.</p>
+            </div>
+          </div>
+
+          <div class="setup-step">
+            <div class="step-circle">4</div>
+            <div class="step-content">
+              <strong>Tempelkan URL di sini</strong>
+              <div class="url-input-row">
+                <input type="text" id="appsScriptUrlInput"
+                       placeholder="https://script.google.com/macros/s/.../exec" />
+                <button class="btn-sheets" onclick="saveAppsScriptUrl()" style="padding:7px 14px;">
+                  💾 Simpan
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Option B: TSV Paste -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">
+          📋 Opsi B — Manual: Salin & Paste ke Google Sheets
+        </div>
+        <p style="font-size:12px;color:var(--muted);line-height:1.6;">
+          Jika tidak ingin menggunakan Apps Script, gunakan tombol <strong>📋 Salin Siap Paste</strong>
+          lalu buka Google Sheets → klik baris terakhir di kolom C → tekan <code>Ctrl+V</code> untuk paste.
+          Data akan langsung mengisi kolom-kolom yang sesuai secara otomatis.
+        </p>
+        <button class="btn-tsv" onclick="copyTsvFromModal()" style="margin-top:8px;">
+          📋 Salin Baris Terpilih (Siap Paste)
+        </button>
+      </div>
+
+    </div>
+    <div class="modal-footer" style="gap:8px;">
+      <span style="flex:1;font-size:11px;color:var(--muted);" id="sheetsModalFooterInfo"></span>
+      <button class="btn btn-outline btn-sm" onclick="closeSheetsModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="status-msg">Siap</span>
+  <span>NOC Ticket Checker v2.0</span>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
+

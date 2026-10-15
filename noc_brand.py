@@ -1,7 +1,18 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPixmap
+from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import (
+    QColor,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPen,
+    QPixmap,
+    QPolygonF,
+    QRadialGradient,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -16,36 +27,199 @@ APP_VERSION = "1.0.0"
 DARK_THEME = "Midnight Neon (Dark)"
 LIGHT_THEME = "Apple Modern (Light)"
 
+
+def paint_network_background(
+    painter: QPainter,
+    bounds: QRectF | QRect,
+    is_dark: bool = True,
+    opacity: float = 0.50,
+) -> None:
+    """Renders the signature NOC network motif:
+    - Subtle ambient radial glow
+    - Smooth curved tech waves
+    - Latitude/longitude globe arcs
+    - Constellation nodes with glowing pulse rings and connection lines
+    Adjusts colors for dark/light themes and applies the requested opacity factor.
+    """
+    if isinstance(bounds, QRect):
+        bounds = QRectF(bounds)
+    if bounds.width() <= 0 or bounds.height() <= 0:
+        return
+
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # 1. Subtle radial ambient glow
+    glow_center = QPointF(bounds.width() * 0.70, bounds.height() * 0.85)
+    glow_radius = max(bounds.width(), bounds.height()) * 0.75
+    glow = QRadialGradient(glow_center, glow_radius)
+    if is_dark:
+        glow.setColorAt(0.0, QColor(0, 115, 255, int(90 * opacity)))
+        glow.setColorAt(0.45, QColor(0, 60, 180, int(40 * opacity)))
+        glow.setColorAt(1.0, QColor(0, 20, 60, 0))
+    else:
+        glow.setColorAt(0.0, QColor(18, 111, 232, int(60 * opacity)))
+        glow.setColorAt(0.45, QColor(56, 189, 248, int(25 * opacity)))
+        glow.setColorAt(1.0, QColor(240, 245, 252, 0))
+    painter.fillRect(bounds, glow)
+
+    # Secondary glow top-left
+    glow2 = QRadialGradient(
+        QPointF(bounds.width() * 0.15, bounds.height() * 0.20),
+        bounds.width() * 0.5,
+    )
+    if is_dark:
+        glow2.setColorAt(0.0, QColor(42, 168, 242, int(45 * opacity)))
+        glow2.setColorAt(1.0, QColor(9, 21, 38, 0))
+    else:
+        glow2.setColorAt(0.0, QColor(18, 111, 232, int(25 * opacity)))
+        glow2.setColorAt(1.0, QColor(242, 246, 252, 0))
+    painter.fillRect(bounds, glow2)
+
+    # 2. Smooth tech waves (Bezier curves)
+    wave_color = (
+        QColor(18, 111, 232, int(80 * opacity))
+        if is_dark
+        else QColor(37, 99, 235, int(50 * opacity))
+    )
+    painter.setPen(QPen(wave_color, 1.0))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    for offset in (0.12, 0.28, 0.44):
+        wave = QPainterPath()
+        wave.moveTo(bounds.width() * offset, bounds.height() * 0.70)
+        wave.cubicTo(
+            bounds.width() * 0.42,
+            bounds.height() * 0.60,
+            bounds.width() * 0.68,
+            bounds.height() * 0.44,
+            bounds.width() * 1.02,
+            bounds.height() * (0.18 + offset * 0.25),
+        )
+        painter.drawPath(wave)
+
+    # 3. Globe latitude & longitude arcs
+    globe_rect = QRectF(
+        -bounds.width() * 0.10,
+        bounds.height() * 0.55,
+        bounds.width() * 1.25,
+        bounds.height() * 1.05,
+    )
+    main_arc_color = (
+        QColor(0, 140, 255, int(130 * opacity))
+        if is_dark
+        else QColor(18, 111, 232, int(90 * opacity))
+    )
+    sub_arc_color = (
+        QColor(0, 115, 255, int(65 * opacity))
+        if is_dark
+        else QColor(18, 111, 232, int(45 * opacity))
+    )
+
+    painter.setPen(QPen(main_arc_color, 1.2))
+    painter.drawArc(globe_rect, 0, 180 * 16)
+
+    painter.setPen(QPen(sub_arc_color, 0.8))
+    for idx in range(1, 5):
+        inset_x = globe_rect.width() * idx * 0.075
+        inset_y = globe_rect.height() * idx * 0.07
+        painter.drawArc(
+            globe_rect.adjusted(inset_x, inset_y, -inset_x, -inset_y),
+            0,
+            180 * 16,
+        )
+
+    # Longitudinal meridian curves
+    for span in (0.44, 0.86):
+        painter.drawArc(
+            QRectF(
+                globe_rect.center().x() - globe_rect.width() * (span / 2),
+                globe_rect.top(),
+                globe_rect.width() * span,
+                globe_rect.height(),
+            ),
+            0,
+            180 * 16,
+        )
+
+    # 4. Constellation nodes & connecting lines
+    net_line_color = (
+        QColor(0, 160, 255, int(110 * opacity))
+        if is_dark
+        else QColor(18, 111, 232, int(75 * opacity))
+    )
+    painter.setPen(QPen(net_line_color, 0.9))
+
+    nodes = (
+        (0.08, 0.84),
+        (0.22, 0.73),
+        (0.36, 0.78),
+        (0.50, 0.68),
+        (0.66, 0.76),
+        (0.82, 0.65),
+        (0.95, 0.80),
+    )
+    points = [
+        QPointF(bounds.width() * x, bounds.height() * y)
+        for x, y in nodes
+    ]
+
+    for p1, p2 in zip(points, points[1:]):
+        painter.drawLine(p1, p2)
+
+    # Draw node circles & luminous pulses
+    for idx, pt in enumerate(points):
+        painter.setPen(Qt.PenStyle.NoPen)
+        node_color = (
+            QColor(56, 189, 248, int(240 * opacity))
+            if is_dark
+            else QColor(14, 116, 204, int(220 * opacity))
+        )
+        painter.setBrush(node_color)
+        r = 3.2 if idx in (1, 3, 5) else 2.0
+        painter.drawEllipse(pt, r, r)
+
+        # Pulse halo ring on accent nodes
+        if idx in (1, 3, 5):
+            halo_color = (
+                QColor(56, 189, 248, int(45 * opacity))
+                if is_dark
+                else QColor(14, 116, 204, int(35 * opacity))
+            )
+            painter.setBrush(halo_color)
+            painter.drawEllipse(pt, 8.5, 8.5)
+
+    painter.restore()
+
 THEMES = {
     DARK_THEME: {
-        "app_bg": "#0F172A",
-        "card_bg": "#161D30",
-        "card_alt": "#202A43",
-        "border": "#303B58",
-        "text": "#EDE9FE",
-        "muted": "#AAB2C8",
-        "accent": "#22D3EE",
-        "accent_hover": "#67E8F9",
-        "secondary": "#7C3AED",
-        "signal": "#A78BFA",
-        "alert": "#FB7185",
-        "table_row_alt": "#1B263D",
-        "massive_bg": "#3B1D35",
-        "massive_text": "#FDA4AF",
+        "app_bg": "#091526",
+        "card_bg": "#10213A",
+        "card_alt": "#172B48",
+        "border": "#294363",
+        "text": "#EEF5FF",
+        "muted": "#A8B9CF",
+        "accent": "#2AA8F2",
+        "accent_hover": "#58BDF8",
+        "secondary": "#4C83E6",
+        "signal": "#F4B94E",
+        "alert": "#F4778C",
+        "table_row_alt": "#142743",
+        "massive_bg": "#402333",
+        "massive_text": "#FFB0BD",
     },
     LIGHT_THEME: {
-        "app_bg": "#F5F5F7",
+        "app_bg": "#F2F6FC",
         "card_bg": "#FFFFFF",
-        "card_alt": "#EBEDF1",
-        "border": "#D6D8DE",
-        "text": "#1D1D1F",
-        "muted": "#60646C",
-        "accent": "#007AFF",
-        "accent_hover": "#0066D6",
-        "secondary": "#7C3AED",
-        "signal": "#6D5AE6",
-        "alert": "#C6284B",
-        "table_row_alt": "#F0F1F4",
+        "card_alt": "#EAF1F9",
+        "border": "#D2DFEE",
+        "text": "#15263B",
+        "muted": "#52677F",
+        "accent": "#126FE8",
+        "accent_hover": "#075CC7",
+        "secondary": "#3F67C8",
+        "signal": "#9B6500",
+        "alert": "#B42345",
+        "table_row_alt": "#F3F7FC",
         "massive_bg": "#FCE8ED",
         "massive_text": "#8F1732",
     },
@@ -94,13 +268,18 @@ def theme_stylesheet(theme_name: str) -> str:
         }}
         QWidget {{ color: {theme["text"]}; }}
         QFrame#card, QGroupBox {{
-            background: {theme["card_bg"]};
+            background: {theme["card_bg"]}E6;
             border: 1px solid {theme["border"]};
-            border-radius: 10px;
+            border-radius: 12px;
         }}
         QFrame#headerCard, QWidget#brandHeader {{
             background: {theme["card_bg"]};
             border-bottom: 1px solid {theme["border"]};
+        }}
+        QFrame#cctvHeader {{
+            background: {theme["card_bg"]};
+            border: 1px solid {theme["border"]};
+            border-radius: 12px;
         }}
         QWidget#busyBanner {{
             background: {theme["card_alt"]};
@@ -157,10 +336,28 @@ def theme_stylesheet(theme_name: str) -> str:
         }}
         QPushButton#accentBtn:hover {{ background: {theme["accent_hover"]}; }}
         QPushButton#appChoice {{
-            background: {theme["card_bg"]}; text-align: left;
-            padding: 12px 14px; border-radius: 9px;
+            background: {theme["card_bg"]}EA;
+            text-align: left;
+            padding: 16px 18px;
+            border: 1px solid {theme["border"]};
+            border-radius: 14px;
         }}
-        QPushButton#appChoice:hover {{ background: {theme["card_alt"]}; border-color: {theme["accent"]}; }}
+        QPushButton#appChoice:hover {{
+            background: {theme["card_alt"]}F5;
+            border-color: {theme["accent"]};
+        }}
+        QPushButton#appChoice QLabel#appChoiceIndex {{
+            color: {theme["accent"]}; font-size: 10px; font-weight: 700;
+        }}
+        QPushButton#appChoice QLabel#appChoiceTitle {{
+            color: {theme["text"]}; font-size: 19px; font-weight: 700;
+        }}
+        QPushButton#appChoice QLabel#appChoiceDescription {{
+            color: {theme["muted"]}; font-size: 11px;
+        }}
+        QPushButton#appChoice QLabel#appChoiceAction {{
+            color: {theme["accent"]}; font-size: 11px; font-weight: 700;
+        }}
         QToolButton#themeToggleButton {{
             background: {theme["card_alt"]}; color: {theme["muted"]};
             border: 1px solid {theme["border"]}; border-radius: 7px;
@@ -181,7 +378,7 @@ def theme_stylesheet(theme_name: str) -> str:
             border-top-right-radius: 6px; font-weight: 600;
         }}
         QTabBar::tab:selected {{ background: {selected_bg}; color: #FFFFFF; }}
-        QTableWidget {{
+        QTableWidget, QTableView {{
             background: {theme["card_bg"]}; alternate-background-color: {theme["table_row_alt"]};
             color: {theme["text"]}; gridline-color: {theme["border"]}; border: none;
             selection-background-color: {selected_bg}; selection-color: #FFFFFF;
@@ -274,38 +471,22 @@ class NocLogoMark(QWidget):
 
     def paintEvent(self, event) -> None:
         del event
-        theme = THEMES.get(
-            QApplication.instance().property("nocTheme")
-            if QApplication.instance() else "",
-            THEMES[LIGHT_THEME],
-        )
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = min(self.width(), self.height())
-        inset = side * 0.05
-        panel = self.rect().adjusted(round(inset), round(inset), -round(inset), -round(inset))
+        left, top = (self.width() - side) / 2, (self.height() - side) / 2
+        polygons = (
+            ((0.08, 0.76), (0.29, 0.25), (0.51, 0.25), (0.30, 0.76)),
+            ((0.46, 0.76), (0.67, 0.25), (0.90, 0.25), (0.69, 0.76)),
+        )
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(theme["card_alt"]))
-        painter.drawRoundedRect(panel, side * 0.24, side * 0.24)
-
-        path = QPainterPath()
-        path.moveTo(side * 0.29, side * 0.68)
-        path.lineTo(side * 0.29, side * 0.31)
-        path.lineTo(side * 0.68, side * 0.69)
-        path.lineTo(side * 0.68, side * 0.31)
-        painter.setPen(QColor(theme["accent"]))
-        pen = painter.pen()
-        pen.setWidthF(max(2.0, side * 0.075))
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(theme["secondary"]))
-        painter.drawEllipse(round(side * 0.61), round(side * 0.23), round(side * 0.16), round(side * 0.16))
-        painter.setBrush(QColor(theme["accent"]))
-        painter.drawEllipse(round(side * 0.22), round(side * 0.61), round(side * 0.16), round(side * 0.16))
+        for points, color in zip(polygons, ("#168BFF", "#20D5FF")):
+            polygon = QPolygonF(
+                [QPointF(left + side * x, top + side * y) for x, y in points]
+            )
+            painter.setBrush(QColor(color))
+            painter.drawPolygon(polygon)
+        painter.end()
 
 
 def app_icon(theme_name: str) -> QIcon:

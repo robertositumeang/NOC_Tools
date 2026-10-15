@@ -309,7 +309,7 @@ def _parse_datetime(value: Any) -> datetime | None:
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(text)
+        return datetime.fromisoformat(text).replace(tzinfo=None)
     except ValueError:
         return None
 

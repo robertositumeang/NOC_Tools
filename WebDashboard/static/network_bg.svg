@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <radialGradient id="glowDark1" cx="75%" cy="85%" r="75%">
+      <stop offset="0%" stop-color="#005CFF" stop-opacity="0.28"/>
+      <stop offset="45%" stop-color="#00379E" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#091526" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowDark2" cx="20%" cy="20%" r="50%">
+      <stop offset="0%" stop-color="#2AA8F2" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#091526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ambient Glow -->
+  <rect width="1920" height="1080" fill="url(#glowDark1)"/>
+  <rect width="1920" height="1080" fill="url(#glowDark2)"/>
+
+  <!-- Tech Waves -->
+  <g fill="none" stroke="#1256B2" stroke-linecap="round">
+    <path d="M 220 780 C 680 690, 1150 510, 1920 280" stroke-width="1.4" stroke-opacity="0.25"/>
+    <path d="M 420 810 C 860 720, 1320 540, 1920 380" stroke-width="1.1" stroke-opacity="0.18"/>
+    <path d="M 640 840 C 1020 750, 1440 580, 1920 500" stroke-width="0.9" stroke-opacity="0.14"/>
+  </g>
+
+  <!-- Globe Arcs (Latitudes & Meridians) -->
+  <g fill="none" stroke="#0073FF">
+    <ellipse cx="960" cy="1160" rx="920" ry="460" stroke-width="1.5" stroke-opacity="0.32"/>
+    <ellipse cx="960" cy="1160" rx="780" ry="390" stroke-width="1.0" stroke-opacity="0.20"/>
+    <ellipse cx="960" cy="1160" rx="640" ry="320" stroke-width="1.0" stroke-opacity="0.16"/>
+    <ellipse cx="960" cy="1160" rx="500" ry="250" stroke-width="0.8" stroke-opacity="0.12"/>
+    <ellipse cx="960" cy="1160" rx="360" ry="180" stroke-width="0.8" stroke-opacity="0.09"/>
+    
+    <ellipse cx="960" cy="1160" rx="320" ry="620" stroke-width="1.0" stroke-opacity="0.18"/>
+    <ellipse cx="960" cy="1160" rx="600" ry="620" stroke-width="1.0" stroke-opacity="0.14"/>
+  </g>
+
+  <!-- Network Constellation & Luminous Nodes -->
+  <polyline points="160,920 400,800 660,850 940,740 1240,820 1540,700 1800,860" 
+            fill="none" stroke="#008EFF" stroke-width="1.2" stroke-opacity="0.32" stroke-dasharray="4 2"/>
+  
+  <g>
+    <!-- Simple Nodes -->
+    <circle cx="160" cy="920" r="3" fill="#1598FF" fill-opacity="0.85"/>
+    <circle cx="660" cy="850" r="3.2" fill="#1598FF" fill-opacity="0.85"/>
+    <circle cx="1240" cy="820" r="3.2" fill="#1598FF" fill-opacity="0.85"/>
+    <circle cx="1800" cy="860" r="3" fill="#1598FF" fill-opacity="0.85"/>
+
+    <!-- Prominent Accent Nodes with Pulsing Glow Halos -->
+    <circle cx="400" cy="800" r="14" fill="#008EFF" fill-opacity="0.12"/>
+    <circle cx="400" cy="800" r="5" fill="#38BDF8" fill-opacity="0.95"/>
+
+    <circle cx="940" cy="740" r="18" fill="#008EFF" fill-opacity="0.14"/>
+    <circle cx="940" cy="740" r="6" fill="#38BDF8" fill-opacity="0.98"/>
+
+    <circle cx="1540" cy="700" r="16" fill="#008EFF" fill-opacity="0.12"/>
+    <circle cx="1540" cy="700" r="5.5" fill="#38BDF8" fill-opacity="0.95"/>
+  </g>
+</svg>
+

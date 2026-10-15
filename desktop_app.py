@@ -8,6 +8,8 @@ import subprocess
 import sys
 from typing import Any, Callable
 
+from launch_guard import generate_launch_token
+
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
@@ -25,7 +27,7 @@ from PyQt6.QtCore import (
     QTimer,
     QUrl,
 )
-from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -68,6 +70,7 @@ from noc_brand import (
     THEMES,
     apply_standard_window_chrome,
     app_icon,
+    paint_network_background,
     set_application_theme,
     system_theme_name,
     theme_stylesheet,
@@ -95,7 +98,7 @@ from updater import (
     configure_github_repo_dialog,
     get_github_repo,
 )
-from auth import LoginDialog, make_session_token, verify_session_token
+from auth import LoginDialog
 from license_mgr import LicenseActivationDialog, check_active_license
 from PIL import Image, ImageOps, ImageStat
 
@@ -104,7 +107,13 @@ DEFAULT_MASTER_FILENAME = "Site Management -  20260927_160847.xlsx"
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parent
     RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
-    MASTER_SOURCE_DIR = RESOURCE_DIR / "site_management"
+    # Cek folder data eksternal di samping EXE lebih dulu, baru internal
+    if (BASE_DIR / "data").is_dir() and any((BASE_DIR / "data").glob("Site Management*.xlsx")):
+        MASTER_SOURCE_DIR = BASE_DIR / "data"
+    elif any(BASE_DIR.glob("Site Management*.xlsx")):
+        MASTER_SOURCE_DIR = BASE_DIR
+    else:
+        MASTER_SOURCE_DIR = RESOURCE_DIR / "site_management"
 else:
     BASE_DIR = Path(__file__).resolve().parent
     RESOURCE_DIR = BASE_DIR
@@ -821,8 +830,8 @@ def _add_executive_summary_sheet(workbook: Workbook, alarms: list[dict], site_ro
             if offset >= len(fields):
                 continue
             label, value = fields[offset]
-            label_cell = sheet.cell(row_number, column, label)
-            value_cell = sheet.cell(row_number, column + 1, value)
+            label_cell = _set_excel_literal(sheet.cell(row_number, column), label)
+            value_cell = _set_excel_literal(sheet.cell(row_number, column + 1), value)
             label_cell.font = Font(name="Arial", bold=True, size=11)
             label_cell.border = box_border
             label_cell.alignment = Alignment(vertical="center")
@@ -855,7 +864,7 @@ def _add_executive_summary_sheet(workbook: Workbook, alarms: list[dict], site_ro
 
     regions = _unique_site_breakdown(site_rows, "Region")
     for row_number, (region, count) in enumerate(regions, start=region_columns_row + 1):
-        sheet.cell(row_number, 1, region)
+        _set_excel_literal(sheet.cell(row_number, 1), region)
         count_cell = sheet.cell(row_number, 2, count)
         share_cell = sheet.cell(row_number, 3, count / len(unique_sites) if unique_sites else 0)
         share_cell.number_format = "0.0%"
@@ -875,6 +884,19 @@ def _add_executive_summary_sheet(workbook: Workbook, alarms: list[dict], site_ro
     sheet.sheet_view.zoomScale = 100
 
 
+def _set_excel_literal(cell: Any, value: Any) -> Any:
+    cell.value = value
+    if isinstance(value, str):
+        cell.data_type = "s"
+    return cell
+
+
+def _append_excel_literal_row(sheet: Any, values: list[Any]) -> None:
+    row_number = sheet.max_row + 1
+    for column_number, value in enumerate(values, start=1):
+        _set_excel_literal(sheet.cell(row_number, column_number), value)
+
+
 def save_report(path: str | Path, alarms: list[dict], summaries: list[dict]) -> None:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -885,7 +907,7 @@ def save_report(path: str | Path, alarms: list[dict], summaries: list[dict]) -> 
         sheet = workbook.create_sheet(name)
         sheet.append(headers)
         for row in rows:
-            sheet.append([row.get(header, "") for header in headers])
+            _append_excel_literal_row(sheet, [row.get(header, "") for header in headers])
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
         for cell in sheet[1]:
@@ -923,7 +945,10 @@ def save_report(path: str | Path, alarms: list[dict], summaries: list[dict]) -> 
         sheet_raw = workbook.create_sheet(sheet_title)
         sheet_raw.append(raw_headers)
         for r in v_raw_rows:
-            sheet_raw.append([r.get(h, "") if r.get(h) is not None else "" for h in raw_headers])
+            _append_excel_literal_row(
+                sheet_raw,
+                [r.get(h, "") if r.get(h) is not None else "" for h in raw_headers],
+            )
         _style_report_sheet(sheet_raw, "1E3A5F")
 
     workbook.save(path)
@@ -1207,7 +1232,7 @@ def save_selected_site_report(path: str | Path, alarms: list[dict], summaries: l
     headers = ["No", *NORMALIZED_COLUMNS]
     sheet_sites.append(headers)
     for row in all_site_rows:
-        sheet_sites.append([row.get(h, "") for h in headers])
+        _append_excel_literal_row(sheet_sites, [row.get(h, "") for h in headers])
     _style_report_sheet(sheet_sites, "0E4D5A")
 
     # Determine vendors present in the selection
@@ -1263,7 +1288,10 @@ def save_selected_site_report(path: str | Path, alarms: list[dict], summaries: l
         sheet_raw = workbook.create_sheet(sheet_title)
         sheet_raw.append(raw_headers)
         for r in v_raw_rows:
-            sheet_raw.append([r.get(h, "") if r.get(h) is not None else "" for h in raw_headers])
+            _append_excel_literal_row(
+                sheet_raw,
+                [r.get(h, "") if r.get(h) is not None else "" for h in raw_headers],
+            )
         _style_report_sheet(sheet_raw, "1E3A5F")
 
     workbook.save(path)
@@ -1511,14 +1539,23 @@ class MassiveSiteDownApp(QMainWindow):
         header_frame = QFrame()
         header_frame.setObjectName("headerCard")
         h_layout = QHBoxLayout(header_frame)
-        h_layout.setContentsMargins(10, 4, 10, 4)
+        h_layout.setContentsMargins(14, 8, 14, 8)
+        h_layout.setSpacing(12)
 
-        logo = NocLogoMark(32)
+        logo = NocLogoMark(38)
         h_layout.addWidget(logo)
 
-        title_label = QLabel("NOC TOOLS  /  MASSIVE CHECKER")
+        title_stack = QVBoxLayout()
+        title_stack.setSpacing(2)
+        title_label = QLabel("Massive Checker")
         title_label.setObjectName("headerTitle")
-        h_layout.addWidget(title_label)
+        title_stack.addWidget(title_label)
+        subtitle_label = QLabel(
+            "Multi-vendor alarm correlation and impacted-site analysis"
+        )
+        subtitle_label.setObjectName("brandSubtitle")
+        title_stack.addWidget(subtitle_label)
+        h_layout.addLayout(title_stack)
 
         h_layout.addStretch()
 
@@ -1886,7 +1923,7 @@ class MassiveSiteDownApp(QMainWindow):
         self.footer_progress.setVisible(False)
         ft_layout.addWidget(self.footer_progress)
 
-        self.btn_update_check = QPushButton("🔄 Cek Update")
+        self.btn_update_check = QPushButton("🔄 Check Updates")
         self.btn_update_check.setObjectName("brandVersion")
         self.btn_update_check.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_update_check.setStyleSheet(
@@ -2831,33 +2868,33 @@ class MassiveSiteDownApp(QMainWindow):
             dlg.exec()
 
         def on_up_to_date(_info: dict) -> None:
-            self.btn_update_check.setText("🔄 Cek Update")
+            self.btn_update_check.setText("🔄 Check Updates")
             self.btn_update_check.setEnabled(True)
             QMessageBox.information(
                 self,
-                "Aplikasi Terkini",
-                f"Aplikasi {APP_NAME} sudah menggunakan versi terbaru (v{APP_VERSION}).",
+                "Up to Date",
+                f"{APP_NAME} is running the latest version (v{APP_VERSION}).",
             )
 
         def on_no_release(repo: str) -> None:
-            self.btn_update_check.setText("🔄 Cek Update")
+            self.btn_update_check.setText("🔄 Check Updates")
             self.btn_update_check.setEnabled(True)
             QMessageBox.information(
                 self,
-                "Belum Ada Rilis",
-                f"Belum ada rilis pada repository GitHub:\n{repo}",
+                "No Updates Found",
+                "No newer versions or modular updates are available at this time.",
             )
 
         def on_failed(err: str) -> None:
-            self.btn_update_check.setText("🔄 Cek Update")
+            self.btn_update_check.setText("🔄 Check Updates")
             self.btn_update_check.setEnabled(True)
             msg = QMessageBox(self)
-            msg.setWindowTitle("Pemeriksaan Update")
+            msg.setWindowTitle("Update Server")
             msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText(f"Tidak dapat memeriksa update:\n\n{err}")
-            msg.setInformativeText(f"Target repository: {get_github_repo()}")
-            btn_cfg = msg.addButton("Ubah Repository...", QMessageBox.ButtonRole.ActionRole)
-            msg.addButton("Tutup", QMessageBox.ButtonRole.RejectRole)
+            msg.setText(f"Unable to reach the update server:\n\n{err}")
+            msg.setInformativeText("Please verify your network connection.")
+            btn_cfg = msg.addButton("Server Settings...", QMessageBox.ButtonRole.ActionRole)
+            msg.addButton("Close", QMessageBox.ButtonRole.RejectRole)
             msg.exec()
             if msg.clickedButton() == btn_cfg:
                 configure_github_repo_dialog(self)
@@ -2870,12 +2907,105 @@ class MassiveSiteDownApp(QMainWindow):
         worker.start()
 
 
+def launch_subprocess_app(selection: str, parent: QWidget | None = None) -> bool:
+    """Launch modular applications as standalone subprocesses.
+
+    A time-limited HMAC handshake token (generated by launch_guard) is
+    injected into the child process environment.  Each child validates the
+    token on startup and exits immediately if it is missing or invalid,
+    preventing the exe files from being run by double-clicking.
+    """
+    if getattr(sys, "frozen", False):
+        base_dir = Path(sys.executable).parent
+    else:
+        base_dir = Path(__file__).resolve().parent
+
+    # Prefer executables stored in the 'bin/' subfolder (cleaner UX for operators)
+    bin_dir = base_dir / "bin"
+
+    candidates: list[Path] = []
+    app_title = ""
+
+    if selection == "dashboard":
+        app_title = "NOC Web Dashboard"
+        candidates = [
+            bin_dir / "NOC Web Dashboard.exe",
+            base_dir / "NOC Web Dashboard.exe",
+            base_dir / "dist" / "NOC Web Dashboard.exe",
+            base_dir.parent / "dist" / "NOC Web Dashboard.exe",
+            base_dir / "WebDashboard" / "main.py",
+        ]
+    elif selection == "ticket_checker":
+        app_title = "NOC Web Ticket Checker"
+        candidates = [
+            bin_dir / "NOC Web Ticket Checker.exe",
+            base_dir / "NOC Web Ticket Checker.exe",
+            base_dir / "dist" / "NOC Web Ticket Checker.exe",
+            base_dir.parent / "dist" / "NOC Web Ticket Checker.exe",
+            base_dir / "WebTicketChecker" / "main.py",
+        ]
+    elif selection == "modem":
+        app_title = "Capture Modem"
+        candidates = [
+            bin_dir / "Capture_Modem.exe",
+            base_dir / "Capture_Modem.exe",
+            base_dir / "dist" / "Capture_Modem.exe",
+            base_dir / "Capture_Modem" / "Capture_Modem.exe",
+            base_dir / "Capture_Modem" / "gui_app.py",
+            base_dir / "Capture_Modem" / "launcher.py",
+        ]
+    elif selection == "vpn":
+        app_title = "NOC VPN Manager"
+        candidates = [
+            bin_dir / "NOC VPN Manager.exe",
+            base_dir / "NOC VPN Manager.exe",
+            base_dir / "dist" / "NOC VPN Manager.exe",
+            base_dir.parent / "dist" / "NOC VPN Manager.exe",
+            base_dir / "VPN" / "main.py",
+        ]
+
+    # Generate a fresh handshake token for this launch session
+    token = generate_launch_token()
+
+    for c in candidates:
+        if c.exists():
+            try:
+                env = os.environ.copy()
+                env["NOC_LAUNCH_TOKEN"] = token
+
+                flags = subprocess.CREATE_NO_WINDOW if (os.name == "nt" and c.suffix.lower() == ".exe") else 0
+                if c.suffix.lower() == ".exe":
+                    subprocess.Popen([str(c)], cwd=str(c.parent), creationflags=flags, env=env)
+                    return True
+                elif c.suffix.lower() == ".py":
+                    subprocess.Popen([sys.executable, str(c)], cwd=str(c.parent), env=env)
+                    return True
+            except Exception as e:
+                if parent:
+                    QMessageBox.critical(
+                        parent,
+                        "Gagal Membuka Aplikasi",
+                        f"Gagal menjalankan {app_title}:\n\n{e}",
+                    )
+                return False
+
+    if parent:
+        QMessageBox.warning(
+            parent,
+            "Aplikasi Tidak Ditemukan",
+            f"File eksekusi untuk {app_title} tidak ditemukan.\n\n"
+            f"Pastikan file executable berada di folder yang sama atau di subfolder 'bin'.",
+        )
+    return False
+
+
+
 class AppSelectionDialog(QDialog):
     def __init__(self, auth_user: str = "") -> None:
         super().__init__()
         self.auth_user = auth_user
         self.setWindowTitle(f"{APP_NAME} | Select an application")
-        self.resize(620, 500)
+        self.resize(1020, 680)
         self.selection: str | None = None
         application = QApplication.instance()
         self.current_theme_name = (
@@ -2887,18 +3017,18 @@ class AppSelectionDialog(QDialog):
             set_application_theme(self.current_theme_name, application)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 22, 26, 18)
-        layout.setSpacing(13)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(16)
 
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(14)
-        brand_row.addWidget(NocLogoMark(64))
+        brand_row.setSpacing(16)
+        brand_row.addWidget(NocLogoMark(58))
         brand_text = QVBoxLayout()
         brand_text.setSpacing(3)
         title = QLabel(APP_NAME)
         title.setObjectName("brandTitle")
         brand_text.addWidget(title)
-        sub_text = "Operations workspace"
+        sub_text = "NOC operations workspace"
         if self.auth_user:
             sub_text += f"  ·  Operator: {self.auth_user}"
         is_lic, _, days_left, _ = check_active_license()
@@ -2911,28 +3041,78 @@ class AppSelectionDialog(QDialog):
         brand_row.addWidget(self.theme_selector)
         layout.addLayout(brand_row)
 
-        instruction = QLabel("Choose an application to open")
-        instruction.setObjectName("brandSubtitle")
+        instruction = QLabel("Pilih workspace")
+        instruction.setObjectName("brandTitle")
         layout.addWidget(instruction)
 
-        massive_button = QPushButton("Check Massive Outages")
-        massive_button.setObjectName("appChoice")
-        massive_button.setMinimumHeight(52)
-        massive_button.setToolTip("Analyze alarms and affected sites.")
-        massive_button.clicked.connect(lambda: self._select("massive"))
-        layout.addWidget(massive_button)
+        choices_grid = QGridLayout()
+        choices_grid.setSpacing(14)
 
-        cctv_button = QPushButton("Extract Capture CCTV")
-        cctv_button.setObjectName("appChoice")
-        cctv_button.setMinimumHeight(52)
-        cctv_button.setToolTip("Process CCTV captures and export to an Excel template.")
-        cctv_button.clicked.connect(lambda: self._select("cctv"))
-        layout.addWidget(cctv_button)
+        # 01 / DASHBOARD
+        dashboard_button = self._create_choice_button(
+            "01  /  DASHBOARD",
+            "Trouble Ticket Dashboard",
+            "Monitoring visual KPI, analitik tren tiket & handover shift.",
+            "Buka Dashboard  →",
+            "Buka NOC Web Dashboard.",
+            lambda: self._select("dashboard"),
+        )
+        # 02 / AUDIT
+        ticket_checker_button = self._create_choice_button(
+            "02  /  AUDIT",
+            "Ticket Checker Gap",
+            "Audit rekonsiliasi incident & sinkronisasi Google Sheets.",
+            "Buka Ticket Checker  →",
+            "Buka NOC Web Ticket Checker.",
+            lambda: self._select("ticket_checker"),
+        )
+        # 03 / ANALISIS
+        massive_button = self._create_choice_button(
+            "03  /  ANALISIS",
+            "Check Massive",
+            "Korelasi alarm lintas vendor & ringkasan site terdampak.",
+            "Buka Analyzer  →",
+            "Analyze alarms and affected sites.",
+            lambda: self._select("massive"),
+        )
+        # 04 / CAPTURE
+        cctv_button = self._create_choice_button(
+            "04  /  CAPTURE",
+            "CCTV Extractor",
+            "Atur crop screenshot, periksa status kamera, ekspor ke Excel.",
+            "Buka CCTV Extractor  →",
+            "Process CCTV captures and export to an Excel template.",
+            lambda: self._select("cctv"),
+        )
+        # 05 / CAPTURE MODEM
+        modem_button = self._create_choice_button(
+            "05  /  CAPTURE MODEM",
+            "Capture Modem",
+            "Otomasi diagnosa, scraping status modem VSAT & screenshot.",
+            "Buka Capture Modem  →",
+            "Buka Capture Modem Automation.",
+            lambda: self._select("modem"),
+        )
+
+        self.application_choice_buttons = (
+            dashboard_button,
+            ticket_checker_button,
+            massive_button,
+            cctv_button,
+            modem_button,
+        )
+
+        choices_grid.addWidget(dashboard_button, 0, 0)
+        choices_grid.addWidget(ticket_checker_button, 0, 1)
+        choices_grid.addWidget(massive_button, 0, 2)
+        choices_grid.addWidget(cctv_button, 1, 0)
+        choices_grid.addWidget(modem_button, 1, 1)
+        layout.addLayout(choices_grid)
 
         self.choice_shadow_effects: list[QGraphicsDropShadowEffect] = []
-        for button in (massive_button, cctv_button):
+        for button in self.application_choice_buttons:
             shadow = QGraphicsDropShadowEffect(button)
-            shadow.setBlurRadius(18)
+            shadow.setBlurRadius(20)
             shadow.setOffset(0, 4)
             self.choice_shadow_effects.append(shadow)
             button.setGraphicsEffect(shadow)
@@ -2987,8 +3167,6 @@ class AppSelectionDialog(QDialog):
         display_layout.addWidget(settings_note, 2, 0, 1, 2)
         layout.addWidget(display_card)
 
-        self.application_choice_buttons = (massive_button, cctv_button)
-
         layout.addStretch(1)
         footer = QHBoxLayout()
         footer_line = QFrame()
@@ -3031,6 +3209,45 @@ class AppSelectionDialog(QDialog):
         self._cached_release: dict | None = None
         self._start_background_update_check()
 
+    def _create_choice_button(
+        self,
+        index: str,
+        title: str,
+        description: str,
+        action: str,
+        tooltip: str,
+        on_clicked: Callable[[], None],
+    ) -> QPushButton:
+        button = QPushButton()
+        button.setObjectName("appChoice")
+        button.setAccessibleName(title)
+        button.setToolTip(tooltip)
+        button.setMinimumHeight(140)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(on_clicked)
+
+        button_layout = QVBoxLayout(button)
+        button_layout.setContentsMargins(16, 14, 16, 14)
+        button_layout.setSpacing(6)
+        index_label = QLabel(index)
+        index_label.setObjectName("appChoiceIndex")
+        title_label = QLabel(title)
+        title_label.setObjectName("appChoiceTitle")
+        title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
+        description_label = QLabel(description)
+        description_label.setObjectName("appChoiceDescription")
+        description_label.setWordWrap(True)
+        action_label = QLabel(action)
+        action_label.setObjectName("appChoiceAction")
+        for label in (index_label, title_label, description_label, action_label):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        button_layout.addWidget(index_label)
+        button_layout.addWidget(title_label)
+        button_layout.addWidget(description_label)
+        button_layout.addStretch(1)
+        button_layout.addWidget(action_label)
+        return button
+
     def _apply_theme(self, theme_name: str) -> None:
         self.current_theme_name = theme_name
         application = QApplication.instance()
@@ -3043,6 +3260,13 @@ class AppSelectionDialog(QDialog):
         shadow_color.setAlpha(90)
         for shadow in self.choice_shadow_effects:
             shadow.setColor(shadow_color)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        is_dark = (self.current_theme_name == DARK_THEME)
+        paint_network_background(painter, self.rect(), is_dark=is_dark, opacity=0.50)
 
     def _select(self, selection: str) -> None:
         self.selection = selection
@@ -3134,15 +3358,12 @@ def _relaunch_with_scale(
     resolution: str,
     theme_name: str,
     system_dpi: int,
-    auth_user: str = "",
 ) -> None:
     environment = os.environ.copy()
     environment["QT_SCALE_FACTOR"] = f"{_qt_scale_factor(scale_percent, system_dpi):.6f}"
     environment["NOC_TOOLS_RESOLUTION"] = resolution
     environment["NOC_TOOLS_THEME"] = theme_name
     environment["NOC_TOOLS_LAUNCH_APP"] = selection
-    if auth_user:
-        environment["NOC_TOOLS_SESSION_TOKEN"] = make_session_token(auth_user)
 
     if getattr(sys, "frozen", False):
         command = [sys.executable]
@@ -3178,22 +3399,15 @@ def main() -> int:
 
     # ── Authenticate User (Access Control Gate) ──
     authenticated_user = ""
-    session_token = os.environ.pop("NOC_TOOLS_SESSION_TOKEN", "")
-    if session_token:
-        valid_session, session_user = verify_session_token(session_token)
-        if valid_session:
-            authenticated_user = session_user
+    # Close any startup splash so the login dialog is prominently focused
+    for widget in app.topLevelWidgets():
+        if type(widget).__name__ == "StartupSplash":
+            widget.close()
 
-    if not authenticated_user:
-        # Close any startup splash so the login dialog is prominently focused
-        for widget in app.topLevelWidgets():
-            if type(widget).__name__ == "StartupSplash":
-                widget.close()
-
-        login_dialog = LoginDialog()
-        if login_dialog.exec() != QDialog.DialogCode.Accepted:
-            return 0
-        authenticated_user = login_dialog.authenticated_user
+    login_dialog = LoginDialog()
+    if login_dialog.exec() != QDialog.DialogCode.Accepted:
+        return 0
+    authenticated_user = login_dialog.authenticated_user
 
     # ── Verify License Gate (Machine-Bound 1-Year License) ──
     is_lic_valid, lic_msg, days_left, exp_date = check_active_license()
@@ -3243,7 +3457,6 @@ def main() -> int:
                         resolution,
                         selected_theme,
                         system_dpi,
-                        auth_user=authenticated_user,
                     )
                 except OSError as error:
                     QMessageBox.critical(
@@ -3254,6 +3467,10 @@ def main() -> int:
                     )
                     continue
                 return False
+
+            if selection in ("dashboard", "ticket_checker", "modem", "vpn"):
+                launch_subprocess_app(selection, selection_dialog)
+                continue
 
             return launch_selected_app(
                 selection,
