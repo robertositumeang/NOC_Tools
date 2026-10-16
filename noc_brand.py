@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 
 
 APP_NAME = "NOC Tools"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DARK_THEME = "Midnight Neon (Dark)"
 LIGHT_THEME = "Apple Modern (Light)"
 

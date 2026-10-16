@@ -2,7 +2,7 @@
 ; NOC Tools Installer Script
 
 #define MyAppName "NOC Tools"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "PT. KEREAKTIF Indonesia"
 #define MyAppExeName "NOC Tools.exe"
 
@@ -15,7 +15,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=installer_output
-OutputBaseFilename=NOC_Tools_Setup_v1.0.1
+OutputBaseFilename=NOC_Tools_Setup_v1.0.2
 SetupIconFile=app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
