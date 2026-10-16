@@ -78,76 +78,52 @@ Generates structured Excel workbooks containing 3 auto-formatted sheets:
 2. `VSAT Summary`
 3. `Sites at Peak`
 
-## NOC VPN Manager
+## Windows Laptop Distribution
 
-The separate PyQt6 application in `VPN\` provides a compact Windows interface
-for existing WireGuard for Windows tunnel services and the official FortiClient
-VPN client. It does not replace either VPN client or assert tunnel connectivity.
-Use Python 3.11 or newer on Windows 10/11.
+The supported laptop distribution is a portable ZIP. It bundles the operator
+launcher, combined Dashboard/Ticket Checker, Capture Modem, and the Site
+Management workbook. If the private administrator executable is available at
+build time, it is included separately under `Admin`. The package never includes
+VPN Manager or a local `users.json` credential file.
 
-### Setup and launch (Windows PowerShell)
+### Requirements on the target laptop
+
+- Windows 10 or Windows 11, 64-bit.
+- Microsoft Edge WebView2 Evergreen Runtime for Dashboard and Ticket Checker.
+- Internet access for operator sign-in, license activation, and Google Sheets
+  features. Modem capture also needs access to the target modem.
+- Configure `NOC_LICENSE_API_URL` as described in the authentication section
+  above. License activation is tied to an email and device. Each laptop must be
+  authorized for its own activation; copying the ZIP does not bypass licensing.
+- NOC Tools Administrator is for authorized administrators only. Its separate
+  executable requires administrator credentials and is not exposed in the
+  operator launcher.
+
+Extract the entire ZIP to a writable folder and run `NOC Tools.exe`. Keep the
+`bin`, `data`, `Admin`, and icon files beside the launcher; do not run it from
+inside the ZIP. Python does not need to be installed on a target laptop.
+
+### Build and create the portable ZIP
+
+Run on a Windows build machine with the project dependencies and PyInstaller:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m VPN.main
-```
-
-The existing `PyQt6` requirement is shared with NOC Tools. The VPN manager has
-no additional runtime dependencies.
-
-### Windows integration and privileges
-
-- WireGuard profiles must already be imported into the official WireGuard for
-  Windows application. The manager discovers registered
-  `WireGuardTunnel$<TunnelName>` services and uses Windows `sc.exe` to query,
-  start, or stop those services. Starting or stopping a service may require
-  running the manager with appropriate Windows privileges; it never elevates
-  itself or edits tunnel configurations.
-- FortiClient is detected in common `Program Files` locations and launched
-  directly. Sign-in, MFA, certificate validation, enterprise policy, and
-  connection must be completed inside the official FortiClient application.
-  Direct FortiClient connect/disconnect is intentionally not implemented
-  because no supported client interface is assumed.
-- A running WireGuard service or FortiClient process does not prove that a VPN
-  tunnel is connected or reachable. The readiness indicator reports only
-  installed-client and Windows-service availability.
-- No credentials are collected or stored, and the activity log does not record
-  credentials.
-
-### Tests, packaging, and troubleshooting
-
-Run the controller and UI tests from the repository root:
-
-```powershell
-python -m pip install pytest
-python -m pytest VPN\tests
-```
-
-Build a standalone Windows executable from the repository root:
-
-```powershell
-.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean "VPN\NOC VPN Manager.spec"
-```
-
-If no WireGuard profiles appear, import the tunnel in WireGuard for Windows
-first, then use **Refresh**. If a service operation reports access denied, close
-the manager, relaunch it with the required Windows privileges, and retry.
-FortiClient detection checks common install paths; if the client is installed
-elsewhere, add that path to the controller's `candidate_paths` when integrating
-the deployment-specific location. If Windows blocks service control or process
-detection, review local policy and permissions rather than bypassing them.
-
----
-
-## Building Standalone Portable EXE ("Tinggal Pakai")
-
-To compile the application into a single standalone `.exe` that can be copied to any Windows PC/laptop and run directly **without installing Python or any libraries**:
-
-```powershell
-python -m pip install pyinstaller
+python -m pip install -r Capture_Modem\requirements.txt pyinstaller
 .\build_exe.bat
 ```
 
-The resulting binary will be created at `dist\NOC Dashboard.exe`.
-You can copy this `.exe` file to a USB flash drive or share it via cloud storage, and any user can immediately run it by double-clicking.
+The build produces the current executables in `dist` and creates
+`installer_output\NOC_Tools_Portable.zip`. The archive contains only explicitly
+listed runtime files and the portable instructions; it excludes local account
+data, caches, virtual environments, build trees, retired standalone web tools,
+and VPN Manager. NOC Tools Administrator remains a separate, privately
+controlled utility; when available, the portable archive stores it under
+`Admin` without adding it to the operator launcher.
+The Capture Modem sitelist and Paket 10/11 CCTV templates are bundled in their
+workspaces and can also be downloaded from the UI.
+
+`installer.iss` provides an Inno Setup alternative with an optional shortcut
+for the administrator utility. Build it with Inno Setup 6 after running
+`build_exe.bat`. The admin PyInstaller spec uses paths relative to the project,
+so rebuilding does not depend on this workspace's current drive or folder.

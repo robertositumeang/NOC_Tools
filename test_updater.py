@@ -50,19 +50,19 @@ class UpdaterGitHubTests(unittest.TestCase):
             "tag_name": "v2.0.0",
             "name": "NOC Tools v2.0.0 Update",
             "body": "Fixed multi-incident detection and improved CCTV reports.",
-            "html_url": "https://github.com/PT-Lindu-Putra-Utama/NOC-Project/releases/tag/v2.0.0",
+            "html_url": "https://github.com/robertositumeang/NOC_Tools/releases/tag/v2.0.0",
             "published_at": "2026-10-10T12:00:00Z",
             "assets": [
                 {
                     "name": "NOC Tools.exe",
-                    "browser_download_url": "https://github.com/PT-Lindu-Putra-Utama/NOC-Project/releases/download/v2.0.0/NOC_Tools.exe",
+                    "browser_download_url": "https://github.com/robertositumeang/NOC_Tools/releases/download/v2.0.0/NOC_Tools.exe",
                     "size": 60000000,
                 }
             ],
         }
         mock_get.return_value = mock_resp
 
-        info = check_github_release("PT-Lindu-Putra-Utama/NOC-Project")
+        info = check_github_release("robertositumeang/NOC_Tools")
         self.assertIsNotNone(info)
         self.assertEqual(info["tag_name"], "v2.0.0")
         self.assertEqual(info["asset_name"], "NOC Tools.exe")
@@ -78,6 +78,65 @@ class UpdaterGitHubTests(unittest.TestCase):
         info = check_github_release("nonexistent/repo")
         self.assertIsNone(info)
 
+    @patch("updater.requests.get")
+    def test_check_github_release_tracks_combined_web_tools_only(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v2.0.0",
+            "assets": [
+                {
+                    "name": "NOC Web Tools.exe",
+                    "browser_download_url": "https://example.test/NOC-Web-Tools.exe",
+                    "size": 1000000,
+                },
+                {
+                    "name": "NOC Web Dashboard.exe",
+                    "browser_download_url": "https://example.test/old-dashboard.exe",
+                    "size": 1000000,
+                },
+                {
+                    "name": "NOC Web Ticket Checker.exe",
+                    "browser_download_url": "https://example.test/old-checker.exe",
+                    "size": 1000000,
+                },
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        info = check_github_release("owner/repo")
+
+        self.assertIsNone(info["asset_name"])
+        self.assertEqual(
+            [item["name"] for item in info["modular_items"]],
+            ["NOC Web Tools.exe"],
+        )
+        self.assertEqual(
+            info["modular_items"][0]["target_rel_path"],
+            "bin\\NOC Web Tools.exe",
+        )
+
+    @patch("updater.requests.get")
+    def test_check_github_release_ignores_retired_vpn_assets(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v2.0.0",
+            "assets": [
+                {
+                    "name": "NOC VPN Manager.exe",
+                    "browser_download_url": "https://example.test/old-vpn.exe",
+                    "size": 1000000,
+                }
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        info = check_github_release("owner/repo")
+
+        self.assertIsNone(info["asset_name"])
+        self.assertEqual(info["modular_items"], [])
+
     def test_repo_settings(self):
         orig = get_github_repo()
         set_github_repo("test-owner/test-repo")
@@ -87,4 +146,3 @@ class UpdaterGitHubTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

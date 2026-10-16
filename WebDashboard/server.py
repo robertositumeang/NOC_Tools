@@ -8,8 +8,6 @@ import csv
 from datetime import datetime
 from io import StringIO
 import json
-import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -520,47 +518,7 @@ async def export_tickets() -> StreamingResponse:
 
 @app.post("/api/open-ticket-checker")
 async def launch_ticket_checker() -> dict:
-    # Generate a one-time launch token so WebTicketChecker/main.py passes
-    # launch_guard.require_launcher_token() without showing "Akses Ditolak"
-    try:
-        from launch_guard import generate_launch_token  # noqa: PLC0415
-        token = generate_launch_token()
-    except Exception:
-        token = None
-
-    # Build the child environment with the token injected
-    child_env = os.environ.copy()
-    if token:
-        child_env["NOC_LAUNCH_TOKEN"] = token
-
-    # Saat frozen (EXE), sys.executable adalah path EXE Dashboard itu sendiri
-    # Ticket Checker EXE biasanya ada di folder yang sama (dist/)
-    exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT / "dist"
-
-    candidates = [
-        exe_dir / "NOC Web Ticket Checker.exe",           # folder yang sama dengan Dashboard EXE
-        exe_dir.parent / "dist" / "NOC Web Ticket Checker.exe",  # fallback ke dist/ relatif
-        ROOT / "dist" / "NOC Web Ticket Checker.exe",
-        Path.cwd() / "dist" / "NOC Web Ticket Checker.exe",
-        ROOT / "WebTicketChecker" / "main.py",
-        Path.cwd() / "WebTicketChecker" / "main.py",
-    ]
-    for c in candidates:
-        if c.exists():
-            try:
-                if c.suffix.lower() == ".exe":
-                    subprocess.Popen(
-                        [str(c)],
-                        env=child_env,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                    )
-                    return {"success": True, "launched": str(c)}
-                elif c.suffix.lower() == ".py":
-                    subprocess.Popen([sys.executable, str(c)], env=child_env)
-                    return {"success": True, "launched": str(c)}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-    return {"success": False, "message": "NOC Web Ticket Checker tidak ditemukan"}
+    return {"success": True, "url": "/ticket-checker/"}
 
 
 # ── Health ────────────────────────────────────────────────────────────
@@ -576,4 +534,3 @@ from fastapi.responses import FileResponse  # noqa: E402
 @app.get("/")
 async def root() -> FileResponse:
     return FileResponse(str(STATIC_DIR / "index.html"))
-

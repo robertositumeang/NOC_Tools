@@ -38,7 +38,7 @@ async function bootstrap() {
     renderSummary(sum);
 
     // 2. Trigger background fetch (non-blocking)
-    fetch('/api/refresh', { method: 'POST' }).catch(() => {});
+    fetch(apiUrl('/api/refresh'), { method: 'POST' }).catch(() => {});
 
     // 3. Load charts & tables
     await Promise.all([loadTrend(), loadProblems(), loadProvinces(), loadTopClosedSites()]);
@@ -51,7 +51,7 @@ async function bootstrap() {
 
 async function silentRefresh() {
   try {
-    await fetch('/api/refresh', { method: 'POST' });
+    await fetch(apiUrl('/api/refresh'), { method: 'POST' });
     const sum = await api('/api/summary');
     renderSummary(sum);
     await refreshCharts();
@@ -81,12 +81,16 @@ async function refreshData(force = false) {
 
 // ══════════════════════ API helper ══════════════════════
 async function api(path, opts = {}) {
-  const resp = await fetch(path, opts);
+  const resp = await fetch(apiUrl(path), opts);
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
     throw new Error(err.detail || resp.statusText);
   }
   return resp.json();
+}
+
+function apiUrl(path) {
+  return path.startsWith('/api/') ? `/dashboard${path}` : path;
 }
 
 // ══════════════════════ Summary / KPI ══════════════════════
@@ -865,14 +869,14 @@ function downloadReportTxt() {
 
 // ══════════════════════ Direct CSV Download & Launcher ══════════════════════
 function downloadAllTicketsCSV() {
-  window.location.href = '/api/export-tickets';
+  window.location.href = apiUrl('/api/export-tickets');
 }
 
 async function openTicketCheckerApp() {
   try {
     const res = await api('/api/open-ticket-checker', { method: 'POST' });
     if (res.success) {
-      setStatus('ok', 'Membuka NOC Web Ticket Checker...');
+      window.location.href = res.url;
     } else {
       alert(res.message || 'Gagal membuka NOC Web Ticket Checker');
     }
@@ -880,5 +884,4 @@ async function openTicketCheckerApp() {
     alert('Gagal membuka Ticket Checker: ' + err.message);
   }
 }
-
 

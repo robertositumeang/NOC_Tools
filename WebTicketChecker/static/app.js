@@ -54,8 +54,12 @@ function setStatus(msg, ok = true) {
 }
 
 // ── API helpers ───────────────────────────────────────────────────
+function apiUrl(url) {
+  return url.startsWith("/api/") ? `/ticket-checker${url}` : url;
+}
+
 async function apiFetch(url, opts = {}) {
-  const res = await fetch(url, opts);
+  const res = await fetch(apiUrl(url), opts);
   if (!res.ok) {
     let detail = "";
     try { const j = await res.json(); detail = j.detail || ""; } catch {}
@@ -65,45 +69,12 @@ async function apiFetch(url, opts = {}) {
 }
 
 // ── DB Status ─────────────────────────────────────────────────────
-function stopDbPolling() {
-  if (_dbPollTimer) {
-    clearInterval(_dbPollTimer);
-    _dbPollTimer = null;
-  }
-}
-
-function startDbPolling() {
-  if (_dbPollTimer) return;
-  _dbPollTimer = setInterval(async () => {
-    try {
-      const d = await apiFetch("/api/db-status");
-      updateDbCard(d);
-      checkReady(d);
-      if (d.loaded || d.error) {
-        stopDbPolling();
-        const btn = document.getElementById("refreshDbBtn");
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh DB`;
-        }
-      }
-    } catch (e) {
-      // transient polling error
-    }
-  }, 1000);
-}
-
 async function loadDbStatus() {
   try {
     const d = await apiFetch("/api/db-status");
     updateDbCard(d);
     updateUploadCards(d);
     checkReady(d);
-
-    if (d.loading || (!d.loaded && !d.error)) {
-      startDbPolling();
-    }
-
     if (d.checked) {
       await fetchGaps(_filter, _search, 0);
       showResults(d);
@@ -120,25 +91,23 @@ function updateDbCard(d) {
   if (d.loading) {
     if (badge) {
       badge.className = "db-badge badge-loading";
-      badge.innerHTML = `<span class="spinner"></span> Sinkronisasi Google Sheets...`;
+      badge.innerHTML = `<span class="spinner"></span> Memuat...`;
     }
-    if (count) count.textContent = "Sedang mengunduh dan membaca database Trouble Ticket...";
-    setStatus("Sedang sinkronisasi database dari Google Sheets...");
+    if (count) count.textContent = "Sedang mengambil data dari Google Sheets...";
   } else if (d.error) {
     if (badge) {
       badge.className = "db-badge badge-error";
       badge.textContent = "Gagal Terhubung";
     }
     if (count) count.textContent = d.error;
-    setStatus("Gagal memuat DB: " + d.error, false);
   } else if (d.loaded) {
     if (badge) {
       badge.className = "db-badge badge-connected";
-      badge.textContent = "● Terhubung";
+      badge.textContent = "Terhubung";
     }
     const at = d.loaded_at ? new Date(d.loaded_at * 1000).toLocaleTimeString("id-ID") : "";
-    if (count) count.textContent = `${d.count.toLocaleString("id-ID")} tiket database siap` + (at ? ` (${at})` : "");
-    setStatus(`Database siap: ${d.count.toLocaleString("id-ID")} tiket dimuat`);
+    if (count) count.textContent = `${d.count.toLocaleString("id-ID")} tiket database dimuat` + (at ? ` (${at})` : "");
+    setStatus(`Database dimuat: ${d.count.toLocaleString("id-ID")} tiket`);
   } else {
     if (badge) {
       badge.className = "db-badge badge-idle";
@@ -173,24 +142,28 @@ async function refreshDb() {
   const btn = document.getElementById("refreshDbBtn");
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Sinkronisasi...`;
+    btn.innerHTML = `<span class="spinner"></span> Memuat...`;
   }
 
   const badge = document.getElementById("dbStatusBadge");
   const count = document.getElementById("dbCountText");
   if (badge) {
     badge.className = "db-badge badge-loading";
-    badge.innerHTML = `<span class="spinner"></span> Sinkronisasi...`;
+    badge.innerHTML = `<span class="spinner"></span> Memuat...`;
   }
-  if (count) count.textContent = "Sedang mengambil data terbaru dari Google Sheets...";
+  if (count) count.textContent = "Sedang sinkronisasi data dari Google Sheets...";
 
-  setStatus("Memuat ulang database TT dari Google Sheets...");
+  setStatus("Memuat ulang database TT...");
 
   try {
-    await apiFetch("/api/refresh-db?force=true", { method: "POST" });
-    startDbPolling();
+    const d = await apiFetch("/api/refresh-db?force=true", { method: "POST" });
+    const status = await apiFetch("/api/db-status");
+    updateDbCard(status);
+    checkReady(status);
+    setStatus(`Database diperbarui: ${d.count?.toLocaleString("id-ID") ?? "?"} tiket`);
   } catch (e) {
     setDbCardError(e.message);
+  } finally {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh DB`;
@@ -217,12 +190,14 @@ function handleDrop(e, type) {
   const files = Array.from(e.dataTransfer.files).filter(f =>
     /\.(xlsx|xlsm|xls)$/i.test(f.name)
   );
-  if (files.length) uploadFiles(type, files);
+  if (files.length > 1) alert("Pilih satu file untuk setiap jenis upload.");
+  else if (files.length) uploadFiles(type, files);
   else alert("Please drop .xlsx / .xlsm / .xls files.");
 }
 function handleFileChange(type, input) {
   const files = Array.from(input.files);
-  if (files.length) uploadFiles(type, files);
+  if (files.length > 1) alert("Pilih satu file untuk setiap jenis upload.");
+  else if (files.length) uploadFiles(type, files);
   input.value = ""; // allow re-uploading same file
 }
 
@@ -248,6 +223,11 @@ function markUploadLoaded(type, filename, count, fileCount) {
 }
 
 async function uploadFiles(type, files) {
+  if (files.length !== 1) {
+    alert("Pilih satu file untuk setiap jenis upload.");
+    return;
+  }
+
   for (const f of files) {
     const suffix = f.name.split(".").pop().toLowerCase();
     if (!["xlsx","xlsm","xls"].includes(suffix)) {
@@ -265,7 +245,7 @@ async function uploadFiles(type, files) {
   for (const f of files) form.append("files", f);
 
   try {
-    const res = await fetch(`/api/upload/${type}`, { method: "POST", body: form });
+    const res = await fetch(apiUrl(`/api/upload/${type}`), { method: "POST", body: form });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.detail || `HTTP ${res.status}`);
@@ -600,7 +580,7 @@ async function exportGaps(format = "csv") {
   setStatus(`Mengekspor data ke file ${ext.toUpperCase()}...`);
 
   try {
-    const res = await fetch(`/api/export-save/${ext}`, { method: "POST" });
+    const res = await fetch(apiUrl(`/api/export-save/${ext}`), { method: "POST" });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.detail || `HTTP ${res.status}`);
@@ -632,8 +612,8 @@ function closeExportSuccessModal() {
 async function openExportedFileLocation() {
   try {
     const url = _lastExportedPath 
-      ? `/api/open-downloads?path=${encodeURIComponent(_lastExportedPath)}`
-      : `/api/open-downloads`;
+      ? apiUrl(`/api/open-downloads?path=${encodeURIComponent(_lastExportedPath)}`)
+      : apiUrl("/api/open-downloads");
     await fetch(url, { method: "POST" });
     closeExportSuccessModal();
   } catch (e) {
@@ -643,36 +623,16 @@ async function openExportedFileLocation() {
 
 async function openDownloadsFolder() {
   try {
-    await fetch("/api/open-downloads", { method: "POST" });
+    const response = await fetch(apiUrl("/api/open-downloads"), { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || `HTTP ${response.status}`);
+    }
   } catch (e) {
     alert("Gagal membuka folder Downloads: " + e.message);
   }
 }
 
-
-// ── Clipboard Helper (WebView2 & Browser safe) ─────────────────────
-async function copyTextToClipboard(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (e) {
-      // Fallback to execCommand below
-    }
-  }
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  ta.style.top = "0";
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  const ok = document.execCommand("copy");
-  document.body.removeChild(ta);
-  if (!ok) throw new Error("Gagal menyalin teks ke clipboard");
-  return true;
-}
 
 // ── Checkbox Selection ────────────────────────────────────────────
 function toggleAllGaps(checked) {
@@ -722,7 +682,6 @@ function getSelectedIndices() {
   return [..._selectedGapIndices].sort((a, b) => a - b);
 }
 
-// Aliases for compatibility
 function openSheetsWriteModal() {
   writeToGoogleSheets();
 }
@@ -740,14 +699,11 @@ async function writeToGoogleSheets() {
   }
 
   const writeBtn = document.getElementById("btnWriteSheets") || document.getElementById("writeToSheetsBtn");
-  if (writeBtn) {
-    writeBtn.disabled = true;
-    writeBtn.innerHTML = `<span class="spinner"></span> Menulis...`;
-  }
+  if (writeBtn) { writeBtn.disabled = true; writeBtn.innerHTML = `<span class="spinner"></span> Menulis...`; }
   setStatus(`Menulis ${indices.length} baris ke Google Sheets...`);
 
   try {
-    const res = await fetch("/api/write-to-sheets", {
+    const res = await fetch(apiUrl("/api/write-to-sheets"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ indices }),
@@ -757,21 +713,19 @@ async function writeToGoogleSheets() {
       throw new Error(j.detail || `HTTP ${res.status}`);
     }
     setStatus(`✅ Berhasil menulis ${j.rows_written ?? indices.length} baris ke Google Sheets.`);
-    alert(`✅ Berhasil!\n${j.rows_written ?? indices.length} baris berhasil ditulis ke sheet "Database TT" tepat di bawah sitelist terakhir.`);
+    alert(`✅ Berhasil!\n${j.rows_written ?? indices.length} baris berhasil ditulis ke sheet "Database TT".`);
   } catch (e) {
     const msg = e.message || "Unknown error";
     setStatus("Gagal tulis ke Sheets: " + msg, false);
     if (msg.includes("belum dikonfigurasi")) {
+      // Buka modal konfigurasi
       openSheetsModal();
-      showSheetsStatus("Apps Script URL belum dikonfigurasi. Anda bisa menggunakan tombol '📋 Salin Siap Paste' atau konfigurasikan URL Apps Script.", "error");
+      showSheetsStatus("Apps Script URL belum dikonfigurasi. Silakan ikuti langkah setup di bawah.", "error");
     } else {
-      alert("Gagal menulis ke Google Sheets:\n" + msg + "\n\nTip: Anda juga bisa menggunakan tombol '📋 Salin Siap Paste' untuk menempel langsung ke Google Sheets.");
+      alert("Gagal menulis ke Google Sheets:\n" + msg);
     }
   } finally {
-    if (writeBtn) {
-      writeBtn.disabled = false;
-      writeBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Tulis ke Google Sheets`;
-    }
+    if (writeBtn) { writeBtn.disabled = false; writeBtn.innerHTML = `<span>📝</span> Tulis ke Google Sheets (Database TT)`; }
     updateSelectionInfo();
   }
 }
@@ -780,7 +734,7 @@ async function writeToGoogleSheets() {
 async function copyTsvForPaste() {
   const indices = getSelectedIndices();
   if (indices.length === 0) {
-    alert("Pilih minimal satu baris yang ingin disalin.");
+    alert("Pilih minimal satu baris untuk disalin.");
     return;
   }
   await _doCopyTsv(indices);
@@ -797,7 +751,7 @@ async function copyTsvFromModal() {
 
 async function _doCopyTsv(indices, fromModal = false) {
   try {
-    const res = await fetch("/api/generate-tsv", {
+    const res = await fetch(apiUrl("/api/generate-tsv"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ indices }),
@@ -806,7 +760,7 @@ async function _doCopyTsv(indices, fromModal = false) {
     if (!res.ok) throw new Error(j.detail || `HTTP ${res.status}`);
 
     await copyTextToClipboard(j.tsv || "");
-    const msg = `✅ ${j.rows} baris berhasil disalin ke clipboard!\n\nCara menempel ke Google Sheets:\n1. Buka sheet "Database TT"\n2. Klik sel kosong di kolom C (Site ID) pada baris tepat di bawah sitelist terakhir\n3. Tekan Ctrl+V untuk Paste`;
+    const msg = `✅ ${j.rows} baris disalin ke clipboard!\nSekarang buka Google Sheets → klik sel kosong di kolom C baris terakhir → tekan Ctrl+V.`;
     if (fromModal) {
       showSheetsStatus(`✅ ${j.rows} baris berhasil disalin ke clipboard. Paste ke Google Sheets sekarang.`, "success");
     } else {
@@ -822,6 +776,29 @@ async function _doCopyTsv(indices, fromModal = false) {
       alert(errMsg);
     }
   }
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // Fall back to execCommand for embedded WebViews without clipboard permission.
+    }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.style.top = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("Gagal menyalin teks ke clipboard");
+  return true;
 }
 
 // ── Sheets Modal ──────────────────────────────────────────────────
@@ -840,7 +817,7 @@ async function openSheetsModal() {
         : `⚠ Apps Script URL belum dikonfigurasi`;
     }
     // Update write button state
-    const writeBtn = document.getElementById("writeToSheetsBtn");
+    const writeBtn = document.getElementById("btnWriteSheets") || document.getElementById("writeToSheetsBtn");
     if (writeBtn) {
       writeBtn.title = d.apps_script_url
         ? "Tulis langsung via Apps Script"
@@ -924,4 +901,3 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load DB status
   loadDbStatus();
 });
-

@@ -90,15 +90,15 @@ def _normalize_row_columns(row: dict[str, Any]) -> dict[str, str]:
             continue
         val_str = str(val).strip()
         cl = str(col_name).strip().lower()
-        if any(k in cl for k in ['site id', 'siteid', 'site_id', 'id site', 'site']):
-            if not normalized['Site ID']:
-                normalized['Site ID'] = val_str
-        elif any(k in cl for k in ['site name', 'sitename', 'site_name', 'nama', 'name']):
+        if any(k in cl for k in ['site name', 'sitename', 'site_name', 'nama', 'name']):
             if not normalized['Site Name']:
                 normalized['Site Name'] = val_str
         elif any(k in cl for k in ['ip', 'ip modem', 'ip address', 'host']):
             if not normalized['IP']:
                 normalized['IP'] = val_str
+        elif any(k in cl for k in ['site id', 'siteid', 'site_id', 'id site', 'site']):
+            if not normalized['Site ID']:
+                normalized['Site ID'] = val_str
     return normalized
 
 

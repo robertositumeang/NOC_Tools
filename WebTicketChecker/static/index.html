@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>NOC Command Center – Ticket Checker</title>
-<link rel="icon" type="image/x-icon" href="/static/app_icon.ico" />
+<link rel="icon" type="image/x-icon" href="/ticket-checker/static/app_icon.ico" />
 <style>
 /* ── CSS Variables ───────────────────────────────────────────── */
 :root {
@@ -28,7 +28,7 @@ html[data-theme="light"] {
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 body {
   background-color: var(--app-bg);
-  background-image: url('/static/network_bg.svg');
+  background-image: url('/ticket-checker/static/network_bg.svg');
   background-repeat: no-repeat;
   background-position: center bottom;
   background-size: cover;
@@ -41,7 +41,7 @@ body {
   transition: background-color .25s, color .25s;
 }
 html[data-theme="light"] body {
-  background-image: url('/static/network_bg_light.svg');
+  background-image: url('/ticket-checker/static/network_bg_light.svg');
 }
 a { color:var(--accent); text-decoration:none; }
 button { cursor:pointer; font-family:inherit; }
@@ -69,6 +69,9 @@ button { cursor:pointer; font-family:inherit; }
 }
 @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
 .header-spacer { flex:1; }
+.tool-nav { display:flex; align-items:center; gap:6px; }
+.tool-nav a { padding:6px 10px; border-radius:6px; color:var(--muted); font-size:12px; font-weight:700; }
+.tool-nav a:hover, .tool-nav a[aria-current="page"] { background:var(--card-alt); color:var(--accent); }
 .clock {
   font-size:12px; font-weight:600; font-variant-numeric:tabular-nums;
   color:var(--muted); letter-spacing:.5px; margin-right:4px;
@@ -155,10 +158,10 @@ button { cursor:pointer; font-family:inherit; }
 /* ── Upload Cards (Step 2) ────────────────────────────────────── */
 .upload-card {
   background:var(--card-bg); border:1.5px dashed var(--border);
-  border-radius:var(--radius); padding:14px 18px;
+  border-radius:var(--radius); padding:8px 14px;
   text-align:center; cursor:pointer;
   transition:all .2s ease; position:relative;
-  min-height:105px; display:flex; flex-direction:column;
+  min-height:82px; display:flex; flex-direction:column;
   align-items:center; justify-content:center;
 }
 .upload-card:hover {
@@ -174,10 +177,10 @@ button { cursor:pointer; font-family:inherit; }
   transform:scale(1.01);
 }
 .upload-icon-circle {
-  width:34px; height:34px; border-radius:50%;
+  width:28px; height:28px; border-radius:50%;
   background:var(--card-alt); border:1px solid var(--border);
   display:flex; align-items:center; justify-content:center;
-  color:var(--accent); margin-bottom:6px; transition:var(--transition);
+  color:var(--accent); margin-bottom:4px; transition:var(--transition);
 }
 .upload-card.loaded .upload-icon-circle {
   background:rgba(16,185,129,.15); border-color:var(--green); color:var(--green);
@@ -434,6 +437,10 @@ input[type="file"] { display:none; }
     <span class="title">NOC COMMAND CENTER</span>
     <span class="subtitle">TICKET CHECKER GAP AUDIT</span>
   </div>
+  <nav class="tool-nav" aria-label="NOC Web Tools">
+    <a href="/dashboard/">Dashboard</a>
+    <a href="/ticket-checker/" aria-current="page">Ticket Checker</a>
+  </nav>
   <div class="header-spacer"></div>
   <span class="clock" id="clock">--:--:--</span>
   <button class="header-btn" onclick="openDownloadsFolder()" title="Buka folder Downloads di File Explorer">
@@ -492,13 +499,13 @@ input[type="file"] { display:none; }
            ondragover="handleDragOver(event,'down')"
            ondragleave="handleDragLeave('down')"
            ondrop="handleDrop(event,'down')">
-        <input type="file" id="downInput" accept=".xlsx,.xlsm,.xls" multiple
+        <input type="file" id="downInput" accept=".xlsx,.xlsm,.xls"
                onchange="handleFileChange('down', this)" />
         <div class="upload-icon-circle" id="downIconCircle">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
         </div>
         <div class="upload-title">Site Down</div>
-        <div class="upload-sub" id="downSubText">Klik atau drag &amp; drop file .xlsx di sini (multi-file)</div>
+        <div class="upload-sub" id="downSubText">Pilih atau seret satu file .xlsx di sini</div>
         <div id="downFilename" class="upload-meta hidden">
           <span class="upload-filename-pill" id="downFnText"></span>
           <span class="upload-rows-badge" id="downCountText"></span>
@@ -511,13 +518,13 @@ input[type="file"] { display:none; }
            ondragover="handleDragOver(event,'unmon')"
            ondragleave="handleDragLeave('unmon')"
            ondrop="handleDrop(event,'unmon')">
-        <input type="file" id="unmonInput" accept=".xlsx,.xlsm,.xls" multiple
+        <input type="file" id="unmonInput" accept=".xlsx,.xlsm,.xls"
                onchange="handleFileChange('unmon', this)" />
         <div class="upload-icon-circle" id="unmonIconCircle">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </div>
         <div class="upload-title">Site Unmonitor</div>
-        <div class="upload-sub" id="unmonSubText">Klik atau drag &amp; drop file .xlsx di sini (multi-file)</div>
+        <div class="upload-sub" id="unmonSubText">Pilih atau seret satu file .xlsx di sini</div>
         <div id="unmonFilename" class="upload-meta hidden">
           <span class="upload-filename-pill" id="unmonFnText"></span>
           <span class="upload-rows-badge" id="unmonCountText"></span>
@@ -591,11 +598,11 @@ input[type="file"] { display:none; }
     <!-- Action Toolbar (Google Sheets write) -->
     <div class="action-toolbar">
       <span class="sel-info" id="selectionInfo">0 baris gap dipilih</span>
-      <button class="btn btn-sheets btn-sm" id="btnWriteSheets" onclick="writeToGoogleSheets()" disabled>
+      <button class="btn btn-sheets btn-sm" id="btnWriteSheets" onclick="openSheetsWriteModal()" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         Tulis ke Google Sheets
       </button>
-      <button class="btn-tsv" id="btnCopyTsv" onclick="copyTsvForPaste()" disabled>
+      <button class="btn-tsv" id="btnCopyTsv" onclick="copySelectedTsv()" disabled>
         📋 Salin Siap Paste
       </button>
       <button class="btn-configure" onclick="openSheetsModal()">
@@ -675,10 +682,6 @@ input[type="file"] { display:none; }
     </div>
     <div class="modal-footer" style="gap:10px;">
       <button class="btn btn-outline btn-sm" onclick="closeExportSuccessModal()">Tutup</button>
-      <button class="btn btn-outline btn-sm" onclick="openDownloadsFolder(); closeExportSuccessModal();">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        Folder Downloads
-      </button>
       <button class="btn btn-primary btn-sm" id="btnOpenExportedFile" onclick="openExportedFileLocation()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Buka File di Folder
@@ -805,10 +808,9 @@ input[type="file"] { display:none; }
 <div class="status-bar">
   <div class="status-dot" id="statusDot"></div>
   <span id="status-msg">Siap</span>
-  <span class="status-link" onclick="openDownloadsFolder()">[Buka Folder Downloads]</span>
   <span style="margin-left:auto;">NOC Ticket Checker v2.0</span>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/ticket-checker/static/app.js"></script>
 </body>
 </html>

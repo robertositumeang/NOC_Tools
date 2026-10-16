@@ -644,7 +644,7 @@ def _executive_summary_text(alarms: list[dict], site_rows: list[dict], summaries
     start_text = _format_datetime(start_time) if start_time else "-"
     end_text = _format_datetime(end_time) if end_time else "ONGOING"
     title = (
-        f"Massive Problem [PT. LINDU PUTRA UTAMA] {site_count} SITES VSAT DOWN "
+        f"Massive Problem [PT. KEREAKTIF Indonesia] {site_count} SITES VSAT DOWN "
         f"PAKET {package_text} {area_text} UNDER {provider_text}"
     )
     text = "\n".join([
@@ -2925,24 +2925,20 @@ def launch_subprocess_app(selection: str, parent: QWidget | None = None) -> bool
 
     candidates: list[Path] = []
     app_title = ""
+    web_page: str | None = None
 
-    if selection == "dashboard":
-        app_title = "NOC Web Dashboard"
+    if selection in ("dashboard", "ticket_checker"):
+        web_page = "dashboard" if selection == "dashboard" else "ticket-checker"
+        app_title = (
+            "NOC Web Tools — Dashboard"
+            if selection == "dashboard"
+            else "NOC Web Tools — Ticket Checker"
+        )
         candidates = [
-            bin_dir / "NOC Web Dashboard.exe",
-            base_dir / "NOC Web Dashboard.exe",
-            base_dir / "dist" / "NOC Web Dashboard.exe",
-            base_dir.parent / "dist" / "NOC Web Dashboard.exe",
-            base_dir / "WebDashboard" / "main.py",
-        ]
-    elif selection == "ticket_checker":
-        app_title = "NOC Web Ticket Checker"
-        candidates = [
-            bin_dir / "NOC Web Ticket Checker.exe",
-            base_dir / "NOC Web Ticket Checker.exe",
-            base_dir / "dist" / "NOC Web Ticket Checker.exe",
-            base_dir.parent / "dist" / "NOC Web Ticket Checker.exe",
-            base_dir / "WebTicketChecker" / "main.py",
+            bin_dir / "NOC Web Tools.exe",
+            base_dir / "NOC Web Tools.exe",
+            base_dir / "dist" / "bin" / "NOC Web Tools.exe",
+            base_dir / "WebTools" / "main.py",
         ]
     elif selection == "modem":
         app_title = "Capture Modem"
@@ -2954,16 +2950,6 @@ def launch_subprocess_app(selection: str, parent: QWidget | None = None) -> bool
             base_dir / "Capture_Modem" / "gui_app.py",
             base_dir / "Capture_Modem" / "launcher.py",
         ]
-    elif selection == "vpn":
-        app_title = "NOC VPN Manager"
-        candidates = [
-            bin_dir / "NOC VPN Manager.exe",
-            base_dir / "NOC VPN Manager.exe",
-            base_dir / "dist" / "NOC VPN Manager.exe",
-            base_dir.parent / "dist" / "NOC VPN Manager.exe",
-            base_dir / "VPN" / "main.py",
-        ]
-
     # Generate a fresh handshake token for this launch session
     token = generate_launch_token()
 
@@ -2974,11 +2960,18 @@ def launch_subprocess_app(selection: str, parent: QWidget | None = None) -> bool
                 env["NOC_LAUNCH_TOKEN"] = token
 
                 flags = subprocess.CREATE_NO_WINDOW if (os.name == "nt" and c.suffix.lower() == ".exe") else 0
+                command = [str(c)] if c.suffix.lower() == ".exe" else [sys.executable, str(c)]
+                if web_page is not None:
+                    command.extend(["--page", web_page])
                 if c.suffix.lower() == ".exe":
-                    subprocess.Popen([str(c)], cwd=str(c.parent), creationflags=flags, env=env)
+                    process = subprocess.Popen(
+                        command, cwd=str(c.parent), creationflags=flags, env=env
+                    )
+                    process.wait()
                     return True
-                elif c.suffix.lower() == ".py":
-                    subprocess.Popen([sys.executable, str(c)], cwd=str(c.parent), env=env)
+                if c.suffix.lower() == ".py":
+                    process = subprocess.Popen(command, cwd=str(c.parent), env=env)
+                    process.wait()
                     return True
             except Exception as e:
                 if parent:

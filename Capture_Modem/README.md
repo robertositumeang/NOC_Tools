@@ -63,7 +63,7 @@ Cukup klik ganda (double-click) file:
 
 ### Cara 2: Lewat Terminal / PowerShell
 ```powershell
-cd "C:\Users\PT LINDU PUTRA UTAMA\.gemini\antigravity-ide\scratch\Capture_Modem"
+cd Capture_Modem
 python -m streamlit run app.py
 ```
 

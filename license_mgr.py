@@ -488,7 +488,7 @@ class LicenseActivationDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hdr.addWidget(title)
 
-        subtitle = QLabel("PT. LINDU PUTRA UTAMA  ·  ENTERPRISE NOC")
+        subtitle = QLabel("PT. KEREAKTIF Indonesia  ·  ENTERPRISE NOC")
         subtitle.setObjectName("subtitleLabel")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hdr.addWidget(subtitle)

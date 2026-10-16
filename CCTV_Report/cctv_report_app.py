@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QMenu,
     QPushButton,
     QProgressBar,
     QTableWidget,
@@ -55,6 +56,14 @@ from noc_brand import (
 
 
 APP_NAME = "Extract CCTV ScreenShot v.1.0.0"
+REPORT_TEMPLATE_FILES = {
+    "Paket 10": "Template_Report CCTV Paket 10.xlsx",
+    "Paket 11": "Template_Report CCTV Paket 11.xlsx",
+}
+IMAGE_IMPORT_TEMPLATE_FILES = {
+    "Paket 10": "Template_Import_Gambar_CCTV Paket 10.xlsx",
+    "Paket 11": "Template_Import_Gambar_CCTV Paket 11.xlsx",
+}
 EXPORT_FORMAT_PICTURE_IN_CELL = "picture_in_cell"
 EXPORT_FORMAT_FLOATING = "floating"
 ExportFormat = Literal["picture_in_cell", "floating"]
@@ -109,6 +118,13 @@ OOXML_NS = {
 def app_asset_path(name: str) -> Path:
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base_path / "assets" / name
+
+
+def example_template_path(name: str) -> Path:
+    base_path = Path(
+        getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
+    )
+    return base_path / "contoh_template" / name
 
 
 @dataclass
@@ -1100,8 +1116,34 @@ class MainWindow(QMainWindow):
         self.template_label = QLabel("Template Excel belum dipilih")
         self.template_button = QPushButton("Pilih template .xlsx")
         self.template_button.clicked.connect(self.choose_template)
+        self.download_report_template_button = QPushButton(
+            "Unduh template laporan"
+        )
+        self.download_report_template_button.setToolTip(
+            "Unduh contoh template laporan untuk Paket 10 atau Paket 11."
+        )
+        report_template_menu = QMenu(self)
+        for package, filename in REPORT_TEMPLATE_FILES.items():
+            action = report_template_menu.addAction(package)
+            action.triggered.connect(
+                lambda _checked=False, name=filename: self.download_example_template(name)
+            )
+        self.download_report_template_button.setMenu(report_template_menu)
         self.import_workbook_button = QPushButton("Import gambar dari Excel")
         self.import_workbook_button.clicked.connect(self.import_capture_workbook)
+        self.download_image_template_button = QPushButton(
+            "Unduh template import gambar"
+        )
+        self.download_image_template_button.setToolTip(
+            "Unduh contoh workbook gambar tertanam untuk Paket 10 atau Paket 11."
+        )
+        image_template_menu = QMenu(self)
+        for package, filename in IMAGE_IMPORT_TEMPLATE_FILES.items():
+            action = image_template_menu.addAction(package)
+            action.triggered.connect(
+                lambda _checked=False, name=filename: self.download_example_template(name)
+            )
+        self.download_image_template_button.setMenu(image_template_menu)
         self.images_label = QLabel("Belum ada screenshot")
         self.images_button = QPushButton("Pilih screenshot")
         self.images_button.clicked.connect(self.choose_images)
@@ -1110,8 +1152,10 @@ class MainWindow(QMainWindow):
         self.reset_data_button = QPushButton("Reset data")
         self.reset_data_button.clicked.connect(self.reset_all_data)
         source_layout.addWidget(self.template_button)
+        source_layout.addWidget(self.download_report_template_button)
         source_layout.addWidget(self.template_label, 1)
         source_layout.addWidget(self.import_workbook_button)
+        source_layout.addWidget(self.download_image_template_button)
         source_layout.addWidget(self.images_button)
         source_layout.addWidget(self.paste_button)
         source_layout.addWidget(self.images_label, 1)
@@ -1354,6 +1398,51 @@ class MainWindow(QMainWindow):
                 item.site_name = site_map[item.site_id]
         self.render_table()
         self.update_summary()
+
+    def download_example_template(self, filename: str) -> None:
+        available_templates = {
+            *REPORT_TEMPLATE_FILES.values(),
+            *IMAGE_IMPORT_TEMPLATE_FILES.values(),
+        }
+        if filename not in available_templates:
+            QMessageBox.critical(
+                self, "Template tidak tersedia", "Pilihan template tidak valid."
+            )
+            return
+
+        source = example_template_path(filename)
+        if not source.is_file():
+            QMessageBox.critical(
+                self,
+                "Template tidak ditemukan",
+                f"File template tidak ditemukan:\n{source}",
+            )
+            return
+
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "Simpan template CCTV",
+            str(Path.home() / "Downloads" / filename),
+            "Excel Workbook (*.xlsx)",
+        )
+        if not target:
+            return
+        destination = Path(target)
+        if destination.suffix.lower() != ".xlsx":
+            destination = destination.with_suffix(".xlsx")
+
+        try:
+            shutil.copy2(source, destination)
+        except OSError as error:
+            QMessageBox.critical(
+                self, "Gagal menyimpan template", str(error)
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Template tersimpan",
+            f"Template berhasil disimpan:\n{destination}",
+        )
 
     def choose_images(self) -> None:
         filenames, _ = QFileDialog.getOpenFileNames(

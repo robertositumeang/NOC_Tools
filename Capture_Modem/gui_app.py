@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -36,6 +37,15 @@ from noc_brand import (
     DARK_THEME, LIGHT_THEME, THEMES, NocLogoMark, ThemeSelector,
     apply_standard_window_chrome
 )
+
+SITELIST_TEMPLATE_FILENAME = "Template_Sitelist_Capture_Modem.xlsx"
+
+
+def sitelist_template_path() -> Path:
+    app_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return app_root / "contoh_template" / SITELIST_TEMPLATE_FILENAME
+
+
 try:
     from noc_brand import paint_network_background
 except ImportError:
@@ -565,7 +575,18 @@ class ModemCaptureGUI(QMainWindow):
         self.btn_import_file.setMinimumHeight(34)
         self.btn_import_file.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_import_file.clicked.connect(self.browse_file)
-        l_m1.addWidget(self.btn_import_file)
+        self.btn_download_sitelist_template = QPushButton("Unduh Template .xlsx")
+        self.btn_download_sitelist_template.setMinimumHeight(34)
+        self.btn_download_sitelist_template.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
+        self.btn_download_sitelist_template.clicked.connect(
+            self.download_sitelist_template
+        )
+        sitelist_buttons = QHBoxLayout()
+        sitelist_buttons.addWidget(self.btn_import_file, 1)
+        sitelist_buttons.addWidget(self.btn_download_sitelist_template)
+        l_m1.addLayout(sitelist_buttons)
 
         self.lbl_batch_count = QLabel("No file selected (0 sites)")
         self.lbl_batch_count.setStyleSheet("color: #2AA8F2; font-weight: bold; font-size: 11px;")
@@ -1213,6 +1234,41 @@ class ModemCaptureGUI(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to read file: {e}")
             self.log(f"Error reading file: {e}")
+
+    def download_sitelist_template(self):
+        source = sitelist_template_path()
+        if not source.is_file():
+            QMessageBox.critical(
+                self,
+                "Template tidak ditemukan",
+                f"File template tidak ditemukan:\n{source}",
+            )
+            return
+
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "Simpan template sitelist Capture Modem",
+            str(Path.home() / "Downloads" / source.name),
+            "Excel Workbook (*.xlsx)",
+        )
+        if not target:
+            return
+        destination = Path(target)
+        if destination.suffix.lower() != ".xlsx":
+            destination = destination.with_suffix(".xlsx")
+
+        try:
+            shutil.copy2(source, destination)
+        except OSError as error:
+            QMessageBox.critical(
+                self, "Gagal menyimpan template", str(error)
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Template tersimpan",
+            f"Template sitelist berhasil disimpan:\n{destination}",
+        )
 
     def load_batch_table(self, df):
         self.table_sites.setRowCount(len(df))

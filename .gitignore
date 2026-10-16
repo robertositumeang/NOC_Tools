@@ -13,6 +13,9 @@ ENV/
 build/
 dist/
 *.spec
+!NOC Tools.spec
+!NOC Web Tools.spec
+!Capture_Modem.spec
 
 # Testing
 .pytest_cache/
@@ -33,9 +36,16 @@ $RECYCLE.BIN/
 # Data & Excel
 *.xlsx
 *.xlsm
+!contoh_template/
+!contoh_template/Template_Import_Gambar_CCTV Paket 10.xlsx
+!contoh_template/Template_Import_Gambar_CCTV Paket 11.xlsx
+!contoh_template/Template_Report CCTV Paket 10.xlsx
+!contoh_template/Template_Report CCTV Paket 11.xlsx
+!contoh_template/Template_Sitelist_Capture_Modem.xlsx
 Contoh_alarm_fiberhome/Alarm Query Result.zip
 
 # Security & Administrator Tools (DO NOT COMMIT)
+PANDUAN_ADMIN_LICENSE.md
 admin_license_tool.py
 license_gen.py
 license_generator*.py
@@ -65,4 +75,3 @@ installer_output/
 Capture_Modem/*.exe
 Capture_Modem/captures/
 Capture_Modem/*.png
-

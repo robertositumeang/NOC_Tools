@@ -65,7 +65,7 @@ def configure_github_repo_dialog(parent: QWidget | None = None) -> str | None:
         parent,
         "Pengaturan Repository Update",
         "Masukkan path GitHub repository (format: pemilik/nama-repo):\n"
-        "Contoh: PT-Lindu-Putra-Utama/NOC-Project",
+        "Contoh: robertositumeang/NOC_Tools",
         text=current,
     )
     if ok and repo.strip():
@@ -140,10 +140,13 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
     KNOWN_MODULE_PATHS = {
         "NOC Tools.exe": Path("NOC Tools.exe"),
         "Capture_Modem.exe": Path("bin/Capture_Modem.exe"),
-        "NOC Web Dashboard.exe": Path("bin/NOC Web Dashboard.exe"),
-        "NOC Web Ticket Checker.exe": Path("bin/NOC Web Ticket Checker.exe"),
-        "NOC VPN Manager.exe": Path("bin/NOC VPN Manager.exe"),
+        "NOC Web Tools.exe": Path("bin/NOC Web Tools.exe"),
         "Site Management.xlsx": Path("data/Site Management.xlsx"),
+    }
+    RETIRED_ASSETS = {
+        "noc web dashboard.exe",
+        "noc web ticket checker.exe",
+        "noc vpn manager.exe",
     }
 
     modular_items: list[dict[str, Any]] = []
@@ -154,7 +157,13 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
         a_size = a.get("size", 0)
 
         # Main launcher fallback
-        if a_name.lower().endswith(".exe") and "noc" in a_name.lower() and not download_url:
+        if (
+            a_name.lower().endswith(".exe")
+            and "noc" in a_name.lower()
+            and a_name.lower() != "noc web tools.exe"
+            and a_name.lower() not in RETIRED_ASSETS
+            and not download_url
+        ):
             download_url = a_url
             asset_name = a_name
             asset_size = a_size
@@ -177,7 +186,11 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
                 break
         else:
             # New feature or addon executable in bin/
-            if a_name.endswith(".exe") and a_name not in ("NOC Tools.exe", "NOC_Tools.exe", "NOC_Tools_Setup.exe"):
+            if (
+                a_name.lower().endswith(".exe")
+                and a_name.lower() not in RETIRED_ASSETS
+                and a_name not in ("NOC Tools.exe", "NOC_Tools.exe", "NOC_Tools_Setup.exe")
+            ):
                 rel_path = Path("bin") / a_name
                 local_file = base_app_dir / rel_path
                 modular_items.append({

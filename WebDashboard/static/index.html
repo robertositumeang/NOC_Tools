@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NOC Command Center – Dashboard</title>
-  <link rel="icon" type="image/x-icon" href="/static/app_icon.ico" />
+  <link rel="icon" type="image/x-icon" href="/dashboard/static/app_icon.ico" />
 
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -81,7 +81,7 @@
 
     body {
       background-color: var(--app-bg);
-      background-image: url('/static/network_bg.svg');
+      background-image: url('/dashboard/static/network_bg.svg');
       background-repeat: no-repeat;
       background-position: center bottom;
       background-size: cover;
@@ -95,7 +95,7 @@
       transition: background-color .2s, color .2s;
     }
     html[data-theme="light"] body {
-      background-image: url('/static/network_bg_light.svg');
+      background-image: url('/dashboard/static/network_bg_light.svg');
     }
 
     /* ── Header ── */
@@ -111,6 +111,9 @@
     }
     .header-brand { font-size: 15px; font-weight: 800; letter-spacing: .5px; color: var(--accent); }
     .header-sub   { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+    .tool-nav { display:flex; align-items:center; gap:6px; }
+    .tool-nav a { padding:7px 10px; border-radius:6px; color:var(--muted); font-size:12px; font-weight:700; }
+    .tool-nav a:hover, .tool-nav a[aria-current="page"] { background:var(--card-alt); color:var(--accent); }
     .header-clock { font-family: Consolas, monospace; font-size: 14px; color: var(--signal);
                     background: var(--card-alt); padding: 4px 10px; border-radius: 6px; }
     .header-spacer { flex: 1; }
@@ -345,6 +348,11 @@
     <div class="header-sub">Trouble Ticket Dashboard</div>
   </div>
 
+  <nav class="tool-nav" aria-label="NOC Web Tools">
+    <a href="/dashboard/" aria-current="page">Dashboard</a>
+    <a href="/ticket-checker/">Ticket Checker</a>
+  </nav>
+
   <div class="header-clock" id="clock">00:00:00</div>
 
   <div class="header-spacer"></div>
@@ -356,8 +364,8 @@
   <button class="btn" onclick="openReportModal('noc')" title="Buat Format Laporan WhatsApp NOC">
     📡 NOC Report (WA)
   </button>
-  <button class="btn" onclick="downloadAllTicketsCSV()" title="Ekspor Seluruh Data Tiket ke CSV">
-    📥 Ekspor CSV
+  <button class="btn" onclick="downloadAllTicketsCSV()" title="Unduh semua tiket yang tersedia di database, tanpa filter daftar.">
+    📥 Ekspor semua tiket (CSV)
   </button>
   <button class="btn" onclick="openTicketCheckerApp()" title="Buka Aplikasi NOC Web Ticket Checker">
     🔍 Ticket Checker
@@ -568,7 +576,7 @@
       <button class="btn" onclick="prevPage()">◀ Sebelumnya</button>
       <span class="page-info" id="pageInfo">Halaman 1</span>
       <button class="btn" onclick="nextPage()">Berikutnya ▶</button>
-      <button class="btn btn-primary" onclick="exportCSV()">📥 Ekspor CSV</button>
+      <button class="btn btn-primary" onclick="exportCSV()" title="Unduh tiket OPEN sesuai filter pencarian, aging, paket, dan provinsi.">📥 Ekspor hasil filter (CSV)</button>
     </div>
   </div>
 </div>
@@ -696,8 +704,7 @@
 </div>
 
 <!-- ══════════════════════ APP SCRIPT ══════════════════════ -->
-<script src="/static/app.js"></script>
+<script src="/dashboard/static/app.js"></script>
 
 </body>
 </html>
-

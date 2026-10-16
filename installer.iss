@@ -2,8 +2,8 @@
 ; NOC Tools Installer Script
 
 #define MyAppName "NOC Tools"
-#define MyAppVersion "1.0.0"
-#define MyAppPublisher "PT Lindu Putra Utama"
+#define MyAppVersion "1.0.1"
+#define MyAppPublisher "PT. KEREAKTIF Indonesia"
 #define MyAppExeName "NOC Tools.exe"
 
 [Setup]
@@ -15,7 +15,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=installer_output
-OutputBaseFilename=NOC_Tools_Setup_v1.0.0
+OutputBaseFilename=NOC_Tools_Setup_v1.0.1
 SetupIconFile=app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -34,8 +34,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\NOC Tools.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
-; Sub-apps in bin folder (VPN Manager excluded for further development)
-Source: "dist\bin\*"; DestDir: "{app}\bin"; Excludes: "NOC VPN Manager.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
+; One WebView executable serves both Dashboard and Ticket Checker.
+Source: "dist\bin\NOC Web Tools.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+
+; Standalone PyQt/Playwright application launched from the main app.
+Source: "dist\bin\Capture_Modem.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 ; External data folder (Site Management, etc.)
 Source: "dist\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -47,4 +50,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-
