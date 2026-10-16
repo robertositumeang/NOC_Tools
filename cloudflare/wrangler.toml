@@ -1,0 +1,9 @@
+name = "noc-license-api"
+main = "worker.mjs"
+compatibility_date = "2026-10-16"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "noc-license-db"
+database_id = "46f2941e-59f1-48de-ae1d-bd3aae04bbd4"
