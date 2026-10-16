@@ -591,11 +591,11 @@ input[type="file"] { display:none; }
     <!-- Action Toolbar (Google Sheets write) -->
     <div class="action-toolbar">
       <span class="sel-info" id="selectionInfo">0 baris gap dipilih</span>
-      <button class="btn btn-sheets btn-sm" id="btnWriteSheets" onclick="openSheetsWriteModal()" disabled>
+      <button class="btn btn-sheets btn-sm" id="btnWriteSheets" onclick="writeToGoogleSheets()" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         Tulis ke Google Sheets
       </button>
-      <button class="btn-tsv" id="btnCopyTsv" onclick="copySelectedTsv()" disabled>
+      <button class="btn-tsv" id="btnCopyTsv" onclick="copyTsvForPaste()" disabled>
         📋 Salin Siap Paste
       </button>
       <button class="btn-configure" onclick="openSheetsModal()">
@@ -675,6 +675,10 @@ input[type="file"] { display:none; }
     </div>
     <div class="modal-footer" style="gap:10px;">
       <button class="btn btn-outline btn-sm" onclick="closeExportSuccessModal()">Tutup</button>
+      <button class="btn btn-outline btn-sm" onclick="openDownloadsFolder(); closeExportSuccessModal();">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Folder Downloads
+      </button>
       <button class="btn btn-primary btn-sm" id="btnOpenExportedFile" onclick="openExportedFileLocation()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Buka File di Folder

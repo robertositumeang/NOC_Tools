@@ -105,18 +105,42 @@ def _get_client() -> GoogleSheetsClient:
     )
 
 
-# ── Startup: preload from cache ────────────────────────────────────
-@app.on_event("startup")
-async def _preload() -> None:
-    """Load cached DB data on startup so UI is immediately responsive."""
+async def _async_load_db(force: bool = False) -> None:
+    """Background loader for Google Sheets database so startup is instantaneous."""
+    if _state["db_loading"]:
+        return
+    _state["db_loading"] = True
+    _state["db_error"] = None
     try:
-        rows = await asyncio.to_thread(_get_client().get_tt_data, False)
+        rows = await asyncio.to_thread(_get_client().get_tt_data, force)
         _state["db_rows"] = rows
         _state["db_count"] = len(rows)
         _state["db_loaded"] = True
         _state["db_loaded_at"] = time.time()
     except Exception as e:
         _state["db_error"] = str(e)
+    finally:
+        _state["db_loading"] = False
+
+
+# ── Startup: fast non-blocking preload ─────────────────────────────
+@app.on_event("startup")
+async def _preload() -> None:
+    """Fast startup: load from disk cache if present, otherwise fetch in background without blocking webview."""
+    try:
+        client = _get_client()
+        cached = client._get_cached_data("CACHE_TT_DATA")
+        if cached is not None and len(cached) > 0:
+            _state["db_rows"] = cached
+            _state["db_count"] = len(cached)
+            _state["db_loaded"] = True
+            _state["db_loaded_at"] = time.time()
+            return
+    except Exception:
+        pass
+
+    # No valid local cache: launch background fetch so server starts in <200ms
+    asyncio.create_task(_async_load_db(force=False))
 
 
 # ── Settings ───────────────────────────────────────────────────────
@@ -163,21 +187,9 @@ async def db_status() -> dict:
 @app.post("/api/refresh-db")
 async def refresh_db(force: bool = Query(default=False)) -> dict:
     if _state["db_loading"]:
-        return {"status": "already_loading"}
-    _state["db_loading"] = True
-    _state["db_error"] = None
-    try:
-        rows = await asyncio.to_thread(_get_client().get_tt_data, force)
-        _state["db_rows"] = rows
-        _state["db_count"] = len(rows)
-        _state["db_loaded"] = True
-        _state["db_loaded_at"] = time.time()
-        return {"status": "ok", "count": len(rows)}
-    except Exception as e:
-        _state["db_error"] = str(e)
-        raise HTTPException(503, detail=str(e))
-    finally:
-        _state["db_loading"] = False
+        return {"status": "already_loading", "count": _state["db_count"]}
+    asyncio.create_task(_async_load_db(force))
+    return {"status": "started", "count": _state["db_count"]}
 
 
 # ── File Upload ────────────────────────────────────────────────────
@@ -303,7 +315,7 @@ def _save_to_downloads(filename: str, data: bytes) -> Path:
         dl = Path.home()
     target = dl / filename
     target.write_bytes(data)
-    return target
+    return target.resolve()
 
 
 # ── Export ─────────────────────────────────────────────────────────
@@ -387,23 +399,26 @@ async def export_and_save(fmt: str) -> dict:
 @app.get("/api/open-downloads")
 async def open_downloads_folder(path: str = Query(default="")) -> dict:
     try:
-        if path:
-            p = Path(path)
-            if p.exists() and p.is_file():
-                subprocess.Popen(["explorer.exe", f"/select,{p}"])
-                return {"ok": True, "path": str(p), "selected": True}
-            elif p.exists():
-                subprocess.Popen(["explorer.exe", str(p)])
-                return {"ok": True, "path": str(p)}
-
         dl = Path.home() / "Downloads"
         if not dl.exists():
             dl = Path.home() / "Unduhan"
         if not dl.exists():
             dl = Path.home()
 
-        subprocess.Popen(["explorer.exe", str(dl)])
-        return {"ok": True, "path": str(dl)}
+        if path:
+            p = Path(path).resolve()
+            if p.exists() and p.is_file():
+                # On Windows: explorer.exe /select,"<path>"
+                # Calling via single command string prevents subprocess list2cmdline from quoting "/select,<path>" as a single token,
+                # which causes Windows Explorer to reject the flag and fallback to Documents!
+                subprocess.Popen(f'explorer.exe /select,"{p}"')
+                return {"ok": True, "path": str(p), "selected": True}
+            elif p.exists():
+                subprocess.Popen(f'explorer.exe "{p}"')
+                return {"ok": True, "path": str(p)}
+
+        subprocess.Popen(f'explorer.exe "{dl.resolve()}"')
+        return {"ok": True, "path": str(dl.resolve())}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

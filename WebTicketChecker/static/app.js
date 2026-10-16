@@ -65,12 +65,47 @@ async function apiFetch(url, opts = {}) {
 }
 
 // ── DB Status ─────────────────────────────────────────────────────
+let _dbPollTimer = null;
+
+function stopDbPolling() {
+  if (_dbPollTimer) {
+    clearInterval(_dbPollTimer);
+    _dbPollTimer = null;
+  }
+}
+
+function startDbPolling() {
+  if (_dbPollTimer) return;
+  _dbPollTimer = setInterval(async () => {
+    try {
+      const d = await apiFetch("/api/db-status");
+      updateDbCard(d);
+      checkReady(d);
+      if (d.loaded || d.error) {
+        stopDbPolling();
+        const btn = document.getElementById("refreshDbBtn");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh DB`;
+        }
+      }
+    } catch (e) {
+      // transient polling error
+    }
+  }, 1000);
+}
+
 async function loadDbStatus() {
   try {
     const d = await apiFetch("/api/db-status");
     updateDbCard(d);
     updateUploadCards(d);
     checkReady(d);
+
+    if (d.loading || (!d.loaded && !d.error)) {
+      startDbPolling();
+    }
+
     if (d.checked) {
       await fetchGaps(_filter, _search, 0);
       showResults(d);
@@ -87,23 +122,25 @@ function updateDbCard(d) {
   if (d.loading) {
     if (badge) {
       badge.className = "db-badge badge-loading";
-      badge.innerHTML = `<span class="spinner"></span> Memuat...`;
+      badge.innerHTML = `<span class="spinner"></span> Sinkronisasi Google Sheets...`;
     }
-    if (count) count.textContent = "Sedang mengambil data dari Google Sheets...";
+    if (count) count.textContent = "Sedang mengunduh dan membaca database Trouble Ticket...";
+    setStatus("Sedang sinkronisasi database dari Google Sheets...");
   } else if (d.error) {
     if (badge) {
       badge.className = "db-badge badge-error";
       badge.textContent = "Gagal Terhubung";
     }
     if (count) count.textContent = d.error;
+    setStatus("Gagal memuat DB: " + d.error, false);
   } else if (d.loaded) {
     if (badge) {
       badge.className = "db-badge badge-connected";
-      badge.textContent = "Terhubung";
+      badge.textContent = "● Terhubung";
     }
     const at = d.loaded_at ? new Date(d.loaded_at * 1000).toLocaleTimeString("id-ID") : "";
-    if (count) count.textContent = `${d.count.toLocaleString("id-ID")} tiket database dimuat` + (at ? ` (${at})` : "");
-    setStatus(`Database dimuat: ${d.count.toLocaleString("id-ID")} tiket`);
+    if (count) count.textContent = `${d.count.toLocaleString("id-ID")} tiket database siap` + (at ? ` (${at})` : "");
+    setStatus(`Database siap: ${d.count.toLocaleString("id-ID")} tiket dimuat`);
   } else {
     if (badge) {
       badge.className = "db-badge badge-idle";
@@ -138,28 +175,24 @@ async function refreshDb() {
   const btn = document.getElementById("refreshDbBtn");
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Memuat...`;
+    btn.innerHTML = `<span class="spinner"></span> Sinkronisasi...`;
   }
 
   const badge = document.getElementById("dbStatusBadge");
   const count = document.getElementById("dbCountText");
   if (badge) {
     badge.className = "db-badge badge-loading";
-    badge.innerHTML = `<span class="spinner"></span> Memuat...`;
+    badge.innerHTML = `<span class="spinner"></span> Sinkronisasi...`;
   }
-  if (count) count.textContent = "Sedang sinkronisasi data dari Google Sheets...";
+  if (count) count.textContent = "Sedang mengambil data terbaru dari Google Sheets...";
 
-  setStatus("Memuat ulang database TT...");
+  setStatus("Memuat ulang database TT dari Google Sheets...");
 
   try {
-    const d = await apiFetch("/api/refresh-db?force=true", { method: "POST" });
-    const status = await apiFetch("/api/db-status");
-    updateDbCard(status);
-    checkReady(status);
-    setStatus(`Database diperbarui: ${d.count?.toLocaleString("id-ID") ?? "?"} tiket`);
+    await apiFetch("/api/refresh-db?force=true", { method: "POST" });
+    startDbPolling();
   } catch (e) {
     setDbCardError(e.message);
-  } finally {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh DB`;
@@ -619,6 +652,30 @@ async function openDownloadsFolder() {
 }
 
 
+// ── Clipboard Helper (WebView2 & Browser safe) ─────────────────────
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // Fallback to execCommand below
+    }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.style.top = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("Gagal menyalin teks ke clipboard");
+  return true;
+}
+
 // ── Checkbox Selection ────────────────────────────────────────────
 function toggleAllGaps(checked) {
   const rows = document.querySelectorAll("#gapTbody input[type='checkbox'][data-gidx]");
@@ -641,10 +698,10 @@ function onGapCheckChange(cb, globalIdx) {
     _selectedGapIndices.delete(globalIdx);
   }
   // Sync header checkbox
-  const chkAll = document.getElementById("checkAllGaps");
+  const chkAll = document.getElementById("checkAll") || document.getElementById("checkAllGaps");
   if (chkAll) {
     const rows = document.querySelectorAll("#gapTbody input[type='checkbox'][data-gidx]");
-    const allChecked = [...rows].every(r => r.checked);
+    const allChecked = rows.length > 0 && [...rows].every(r => r.checked);
     const anyChecked = [...rows].some(r => r.checked);
     chkAll.checked = allChecked;
     chkAll.indeterminate = !allChecked && anyChecked;
@@ -654,17 +711,26 @@ function onGapCheckChange(cb, globalIdx) {
 
 function updateSelectionInfo() {
   const sel  = _selectedGapIndices.size;
-  const info = document.getElementById("selInfo");
-  if (info) info.textContent = `☑ ${sel} dari ${_totalGaps} site dipilih`;
+  const info = document.getElementById("selectionInfo") || document.getElementById("selInfo");
+  if (info) info.textContent = `${sel} dari ${_totalGaps} site dipilih`;
 
-  const writeBtn = document.getElementById("writeToSheetsBtn");
-  const tsvBtn   = document.getElementById("copyTsvBtn");
+  const writeBtn = document.getElementById("btnWriteSheets") || document.getElementById("writeToSheetsBtn");
+  const tsvBtn   = document.getElementById("btnCopyTsv") || document.getElementById("copyTsvBtn");
   if (writeBtn) writeBtn.disabled = sel === 0;
   if (tsvBtn)   tsvBtn.disabled   = sel === 0;
 }
 
 function getSelectedIndices() {
   return [..._selectedGapIndices].sort((a, b) => a - b);
+}
+
+// Aliases for compatibility
+function openSheetsWriteModal() {
+  writeToGoogleSheets();
+}
+
+function copySelectedTsv() {
+  copyTsvForPaste();
 }
 
 // ── Write to Google Sheets ────────────────────────────────────────
@@ -675,8 +741,11 @@ async function writeToGoogleSheets() {
     return;
   }
 
-  const writeBtn = document.getElementById("writeToSheetsBtn");
-  if (writeBtn) { writeBtn.disabled = true; writeBtn.innerHTML = `<span class="spinner"></span> Menulis...`; }
+  const writeBtn = document.getElementById("btnWriteSheets") || document.getElementById("writeToSheetsBtn");
+  if (writeBtn) {
+    writeBtn.disabled = true;
+    writeBtn.innerHTML = `<span class="spinner"></span> Menulis...`;
+  }
   setStatus(`Menulis ${indices.length} baris ke Google Sheets...`);
 
   try {
@@ -690,19 +759,21 @@ async function writeToGoogleSheets() {
       throw new Error(j.detail || `HTTP ${res.status}`);
     }
     setStatus(`✅ Berhasil menulis ${j.rows_written ?? indices.length} baris ke Google Sheets.`);
-    alert(`✅ Berhasil!\n${j.rows_written ?? indices.length} baris berhasil ditulis ke sheet "Database TT".`);
+    alert(`✅ Berhasil!\n${j.rows_written ?? indices.length} baris berhasil ditulis ke sheet "Database TT" tepat di bawah sitelist terakhir.`);
   } catch (e) {
     const msg = e.message || "Unknown error";
     setStatus("Gagal tulis ke Sheets: " + msg, false);
     if (msg.includes("belum dikonfigurasi")) {
-      // Buka modal konfigurasi
       openSheetsModal();
-      showSheetsStatus("Apps Script URL belum dikonfigurasi. Silakan ikuti langkah setup di bawah.", "error");
+      showSheetsStatus("Apps Script URL belum dikonfigurasi. Anda bisa menggunakan tombol '📋 Salin Siap Paste' atau konfigurasikan URL Apps Script.", "error");
     } else {
-      alert("Gagal menulis ke Google Sheets:\n" + msg);
+      alert("Gagal menulis ke Google Sheets:\n" + msg + "\n\nTip: Anda juga bisa menggunakan tombol '📋 Salin Siap Paste' untuk menempel langsung ke Google Sheets.");
     }
   } finally {
-    if (writeBtn) { writeBtn.disabled = false; writeBtn.innerHTML = `<span>📝</span> Tulis ke Google Sheets (Database TT)`; }
+    if (writeBtn) {
+      writeBtn.disabled = false;
+      writeBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Tulis ke Google Sheets`;
+    }
     updateSelectionInfo();
   }
 }
@@ -711,7 +782,7 @@ async function writeToGoogleSheets() {
 async function copyTsvForPaste() {
   const indices = getSelectedIndices();
   if (indices.length === 0) {
-    alert("Pilih minimal satu baris untuk disalin.");
+    alert("Pilih minimal satu baris yang ingin disalin.");
     return;
   }
   await _doCopyTsv(indices);
@@ -736,8 +807,8 @@ async function _doCopyTsv(indices, fromModal = false) {
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j.detail || `HTTP ${res.status}`);
 
-    await navigator.clipboard.writeText(j.tsv || "");
-    const msg = `✅ ${j.rows} baris disalin ke clipboard!\nSekarang buka Google Sheets → klik sel kosong di kolom C baris terakhir → tekan Ctrl+V.`;
+    await copyTextToClipboard(j.tsv || "");
+    const msg = `✅ ${j.rows} baris berhasil disalin ke clipboard!\n\nCara menempel ke Google Sheets:\n1. Buka sheet "Database TT"\n2. Klik sel kosong di kolom C (Site ID) pada baris tepat di bawah sitelist terakhir\n3. Tekan Ctrl+V untuk Paste`;
     if (fromModal) {
       showSheetsStatus(`✅ ${j.rows} baris berhasil disalin ke clipboard. Paste ke Google Sheets sekarang.`, "success");
     } else {
