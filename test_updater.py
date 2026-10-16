@@ -1,4 +1,6 @@
 """Unit tests for the Auto-Update module (updater.py)."""
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -157,6 +159,59 @@ class UpdaterGitHubTests(unittest.TestCase):
 
         self.assertFalse(info["has_update"])
         self.assertEqual(info["modular_items"], [])
+
+    @patch("updater.requests.get")
+    def test_check_github_release_matches_github_normalized_executable_names(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v1.0.1",
+            "assets": [
+                {
+                    "name": "NOC.Tools.exe",
+                    "browser_download_url": "https://example.test/NOC.Tools.exe",
+                    "size": 1024,
+                },
+                {
+                    "name": "NOC.Web.Tools.exe",
+                    "browser_download_url": "https://example.test/NOC.Web.Tools.exe",
+                    "size": 2048,
+                },
+                {
+                    "name": "Capture_Modem.exe",
+                    "browser_download_url": "https://example.test/Capture_Modem.exe",
+                    "size": 3072,
+                },
+                {
+                    "name": "NOC_Tools_Portable.zip",
+                    "browser_download_url": "https://example.test/NOC_Tools_Portable.zip",
+                    "size": 4096,
+                },
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app_dir = Path(temp_dir)
+            (app_dir / "bin").mkdir()
+            (app_dir / "NOC Tools.exe").write_bytes(b"a" * 1024)
+            (app_dir / "bin" / "NOC Web Tools.exe").write_bytes(b"b" * 2048)
+            (app_dir / "bin" / "Capture_Modem.exe").write_bytes(b"c" * 3072)
+
+            with patch("updater.__file__", str(app_dir / "updater.py")):
+                info = check_github_release("owner/repo")
+
+        self.assertEqual(info["asset_name"], "NOC Tools.exe")
+        self.assertEqual(
+            [item["name"] for item in info["modular_items"]],
+            ["NOC Tools.exe", "NOC Web Tools.exe", "Capture_Modem.exe"],
+        )
+        self.assertEqual(
+            [item["target_rel_path"] for item in info["modular_items"]],
+            ["NOC Tools.exe", "bin\\NOC Web Tools.exe", "bin\\Capture_Modem.exe"],
+        )
+        self.assertFalse(info["has_update"])
+        self.assertEqual(info["pending_modular"], [])
 
     def test_repo_settings(self):
         orig = get_github_repo()

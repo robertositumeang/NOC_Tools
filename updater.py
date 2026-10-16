@@ -142,6 +142,10 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
         "Capture_Modem.exe": Path("bin/Capture_Modem.exe"),
         "NOC Web Tools.exe": Path("bin/NOC Web Tools.exe"),
     }
+    ASSET_NAME_ALIASES = {
+        "noc.tools.exe": "NOC Tools.exe",
+        "noc.web.tools.exe": "NOC Web Tools.exe",
+    }
     RETIRED_ASSETS = {
         "noc web dashboard.exe",
         "noc web ticket checker.exe",
@@ -152,24 +156,25 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
 
     for a in assets:
         a_name = a.get("name", "")
+        canonical_name = ASSET_NAME_ALIASES.get(a_name.lower(), a_name)
         a_url = a.get("browser_download_url")
         a_size = a.get("size", 0)
 
         # Main launcher fallback
         if (
-            a_name.lower().endswith(".exe")
-            and "noc" in a_name.lower()
-            and a_name.lower() != "noc web tools.exe"
-            and a_name.lower() not in RETIRED_ASSETS
+            canonical_name.lower().endswith(".exe")
+            and "noc" in canonical_name.lower()
+            and canonical_name.lower() != "noc web tools.exe"
+            and canonical_name.lower() not in RETIRED_ASSETS
             and not download_url
         ):
             download_url = a_url
-            asset_name = a_name
+            asset_name = canonical_name
             asset_size = a_size
 
         # Check if asset matches any known or new modular component
         for known_name, rel_path in KNOWN_MODULE_PATHS.items():
-            if a_name.lower() == known_name.lower():
+            if canonical_name.lower() == known_name.lower():
                 local_file = base_app_dir / rel_path
                 is_missing = not local_file.exists()
                 size_diff = is_missing or abs(local_file.stat().st_size - a_size) > 1024  # different size
@@ -188,12 +193,13 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
             if (
                 a_name.lower().endswith(".exe")
                 and a_name.lower() not in RETIRED_ASSETS
-                and a_name not in ("NOC Tools.exe", "NOC_Tools.exe", "NOC_Tools_Setup.exe")
+                and canonical_name.lower()
+                not in ("noc tools.exe", "noc_tools.exe", "noc_tools_setup.exe")
             ):
-                rel_path = Path("bin") / a_name
+                rel_path = Path("bin") / canonical_name
                 local_file = base_app_dir / rel_path
                 modular_items.append({
-                    "name": a_name,
+                    "name": canonical_name,
                     "target_rel_path": str(rel_path),
                     "download_url": a_url,
                     "size": a_size,
