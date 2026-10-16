@@ -38,6 +38,7 @@ from license_crypto import (
     decode_signed_payload,
     normalize_email,
 )
+from service_config import DEFAULT_LICENSE_API_URL, LICENSE_API_URL_ENV
 
 _LICENSE_PREFIX: Final[str] = LEGACY_LICENSE_PREFIX
 _LICENSE_PUBLIC_KEY: Final[bytes] = LICENSE_PUBLIC_KEY
@@ -217,9 +218,11 @@ def activate_license_online(
         clean_machine_id,
         license_key,
     )
-    activation_api_url = (api_url or os.environ.get("NOC_LICENSE_API_URL", "")).strip()
-    if not activation_api_url:
-        raise ValueError("URL layanan aktivasi belum dikonfigurasi.")
+    activation_api_url = (
+        api_url
+        or os.environ.get(LICENSE_API_URL_ENV, "")
+        or DEFAULT_LICENSE_API_URL
+    ).strip()
 
     parsed_url = urlsplit(activation_api_url)
     configured_ca_bundle = (

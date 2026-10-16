@@ -7,12 +7,12 @@ NOC TOOLS - PORTABLE WINDOWS PACKAGE
 4. Microsoft Edge WebView2 Runtime and an internet connection are required.
    Install or repair the Evergreen WebView2 Runtime if the web workspaces
    cannot open.
-5. Login and Google Sheets features require internet access. If the license
-   service URL is not already configured, open PowerShell and run
-   setx NOC_LICENSE_API_URL "https://<your-worker-url>" using the HTTPS URL
-   supplied by your administrator, then sign in again to Windows.
-   Activate a license on each authorized laptop. Licenses are bound to an
-   email and device; moving files does not transfer a device activation.
+5. Login, license activation, and Google Sheets features require internet
+   access. The official license service URL is built into the application; no
+   PowerShell configuration is required. Activate a license on each
+   authorized laptop. Licenses are bound to an email and device; moving files
+   does not transfer a device activation. Administrators using a different
+   Worker may optionally set NOC_LICENSE_API_URL before starting the app.
 6. The administrator executable is deliberately not included in this public
    operator package. Keep it separate and share it only through an approved
    private channel with authorized administrators.

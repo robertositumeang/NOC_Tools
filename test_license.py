@@ -1,6 +1,7 @@
 """Tests for Ed25519-signed, machine-bound license verification."""
 from __future__ import annotations
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -216,3 +217,81 @@ def test_license_save_and_load(tmp_path, monkeypatch):
     sample_key = "NOC-ACT1-test"
     assert save_license(sample_key) is True
     assert load_installed_license() == sample_key
+
+
+@pytest.mark.parametrize(
+    ("environment_url", "explicit_url", "expected_url"),
+    [
+        (
+            None,
+            None,
+            "https://noc-license-api.pasitumengroberto.workers.dev",
+        ),
+        (
+            "https://custom-license.example.com",
+            None,
+            "https://custom-license.example.com",
+        ),
+        (
+            "https://environment.example.com",
+            "https://explicit.example.com",
+            "https://explicit.example.com",
+        ),
+    ],
+)
+def test_activation_uses_default_worker_url_or_environment_override(
+    monkeypatch,
+    environment_url,
+    explicit_url,
+    expected_url,
+):
+    calls = []
+    activation_token = "NOC-ACT1-signed-activation"
+
+    class FakeResponse:
+        ok = True
+
+        def json(self):
+            return {"activation_token": activation_token}
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+
+    monkeypatch.delenv("NOC_LICENSE_API_URL", raising=False)
+    if environment_url is not None:
+        monkeypatch.setenv("NOC_LICENSE_API_URL", environment_url)
+    monkeypatch.setattr(license_mgr, "_verify_issued_license", lambda *args: {"jti": "license-id"})
+    monkeypatch.setattr(
+        license_mgr,
+        "_verify_signed_license_blob",
+        lambda _token: {
+            "email": "user@example.com",
+            "mid": "NOC-AAAA-BBBB-CCCC-DDDD",
+            "jti": "license-id",
+        },
+    )
+    monkeypatch.setattr(
+        license_mgr,
+        "verify_license_key",
+        lambda _token: (True, "active", 30, "01 November 2026"),
+    )
+    monkeypatch.setattr(license_mgr.requests, "post", fake_post)
+
+    result = license_mgr.activate_license_online(
+        "user@example.com",
+        "NOC-LIC3-signed-license",
+        "NOC-AAAA-BBBB-CCCC-DDDD",
+        api_url=explicit_url,
+    )
+
+    assert result == activation_token
+    assert len(calls) == 1
+    url, request = calls[0]
+    assert url == f"{expected_url}/v1/activate"
+    assert request["json"] == {
+        "email": "user@example.com",
+        "license_key": "NOC-LIC3-signed-license",
+        "machine_id": "NOC-AAAA-BBBB-CCCC-DDDD",
+    }
+    assert request["verify"] is True
