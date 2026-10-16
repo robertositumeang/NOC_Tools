@@ -17,6 +17,10 @@ class AdminDatabase {
     const database = this;
     let values = [];
     const statement = {
+      sql,
+      get values() {
+        return values;
+      },
       bind(...boundValues) {
         values = boundValues;
         return statement;
@@ -109,6 +113,16 @@ class AdminDatabase {
       },
       async run() {
         if (sql.includes("DELETE FROM license_issues")) {
+          if (sql.includes("email COLLATE NOCASE IN")) {
+            const emails = new Set(values.map((email) => String(email).toLowerCase()));
+            const previousLength = database.licenses.length;
+            database.licenses = database.licenses.filter(
+              (license) => !emails.has(license.email.toLowerCase()),
+            );
+            return {
+              meta: { changes: previousLength - database.licenses.length },
+            };
+          }
           const [now] = values;
           const expiredIds = new Set(
             database.activationHistory
@@ -124,6 +138,16 @@ class AdminDatabase {
           };
         }
         if (sql.includes("DELETE FROM license_activations")) {
+          if (sql.includes("email COLLATE NOCASE IN")) {
+            const emails = new Set(values.map((email) => String(email).toLowerCase()));
+            const previousLength = database.activations.length;
+            database.activations = database.activations.filter(
+              (activation) => !emails.has(activation.email.toLowerCase()),
+            );
+            return {
+              meta: { changes: previousLength - database.activations.length },
+            };
+          }
           const [now] = values;
           const previousLength = database.activations.length;
           database.activations = database.activations.filter(
@@ -249,6 +273,73 @@ class AdminDatabase {
   }
 
   async batch(statements) {
+    if (statements[0].sql.includes("INSERT OR IGNORE INTO license_activation_history")) {
+      const [
+        licenseId,
+        email,
+        machineId,
+        activatedAt,
+        expiresAt,
+        activationToken,
+        boundEmail,
+        requestedMachine,
+      ] = statements[0].values;
+      const currentForEmail = this.activations.find(
+        (activation) => activation.email.toLowerCase() === boundEmail,
+      );
+      let history = this.activationHistory.find(
+        (entry) => entry.license_id === licenseId,
+      );
+      if (
+        !history &&
+        (!currentForEmail || currentForEmail.machine_id === requestedMachine)
+      ) {
+        history = {
+          license_id: licenseId,
+          email,
+          machine_id: machineId,
+          activated_at: activatedAt,
+          expires_at: expiresAt,
+          activation_token: activationToken,
+        };
+        this.activationHistory.push(history);
+      }
+
+      const [currentLicenseId, currentToken] = statements[1].values;
+      const currentHistory = this.activationHistory.find(
+        (entry) =>
+          entry.license_id === currentLicenseId &&
+          entry.activation_token === currentToken,
+      );
+      if (currentHistory) {
+        const currentIndex = this.activations.findIndex(
+          (activation) =>
+            activation.email.toLowerCase() === currentHistory.email,
+        );
+        if (currentIndex < 0) {
+          this.activations.push({ ...currentHistory });
+        } else if (
+          this.activations[currentIndex].machine_id === currentHistory.machine_id &&
+          this.activations[currentIndex].license_id !== currentHistory.license_id
+        ) {
+          this.activations[currentIndex] = { ...currentHistory };
+        }
+      }
+
+      const selectedHistory = this.activationHistory.find(
+        (entry) => entry.license_id === statements[2].values[0],
+      );
+      const selectedCurrent = this.activations.find(
+        (activation) =>
+          activation.email.toLowerCase() === statements[3].values[0],
+      );
+      return [
+        { success: true },
+        { success: true },
+        { success: true, results: selectedHistory ? [selectedHistory] : [] },
+        { success: true, results: selectedCurrent ? [selectedCurrent] : [] },
+      ];
+    }
     return Promise.all(statements.map((statement) => statement.run()));
   }
 }
@@ -457,6 +548,45 @@ test("adminLicenseIssuance_signsKeyAndListsAuditRecord", async () => {
   assert.equal(history.response.status, 200);
   assert.equal(history.body.licenses.length, 1);
   assert.equal(history.body.licenses[0].license_id, licensePayload.jti);
+  assert.equal(history.body.licenses[0].license_key, issued.body.license_key);
+});
+
+test("adminPendingLicenseListing_recoversTheOriginalSignedKey", async () => {
+  const fixture = await createFixture();
+  const token = await createAdminSession(fixture);
+  const issued = await fixture.call("/v1/admin/licenses/issue", {
+    method: "POST",
+    token,
+    payload: {
+      email: "pending@example.com",
+      machine_id: "NOC-AAAA-BBBB-CCCC-DDDD",
+      days: 30,
+      operator: "NOC_Operator",
+    },
+  });
+
+  const listed = await fixture.call("/v1/admin/licenses", { token });
+  const pending = listed.body.licenses[0];
+  const blob = Buffer.from(
+    pending.license_key.slice("NOC-LIC3-".length),
+    "base64url",
+  );
+  const payloadBytes = blob.subarray(0, blob.length - 64);
+  const signature = blob.subarray(blob.length - 64);
+
+  assert.equal(issued.response.status, 200);
+  assert.equal(listed.response.status, 200);
+  assert.equal(pending.status, "not_activated");
+  assert.equal(pending.license_key, issued.body.license_key);
+  assert.equal(
+    await webcrypto.subtle.verify(
+      "Ed25519",
+      fixture.keys.publicKey,
+      signature,
+      payloadBytes,
+    ),
+    true,
+  );
 });
 
 test("adminLicenseListing_marksExpiredAtBoundaryAndKeepsUnactivatedPending", async () => {
@@ -488,6 +618,8 @@ test("adminLicenseListing_marksExpiredAtBoundaryAndKeepsUnactivatedPending", asy
     ],
   );
   assert.equal(response.body.licenses[2].expires_at, now);
+  assert.match(response.body.licenses[0].license_key, /^NOC-LIC3-/);
+  assert.equal(response.body.licenses[1].license_key, undefined);
 });
 
 test("adminExpiredLicenseCleanup_requiresAdminAndPreservesActivationHistory", async () => {
@@ -536,4 +668,155 @@ test("adminExpiredLicenseCleanup_requiresAdminAndPreservesActivationHistory", as
     fixture.db.activationHistory.map((history) => history.license_id),
     ["expired", "active"],
   );
+});
+
+test("adminSelectedEmailCleanup_unbindsOnlySelectedEmailsAndPreservesHistory", async () => {
+  const fixture = await createFixture();
+  const token = await createAdminSession(fixture);
+  fixture.db.licenses = [
+    { license_id: "old-key", email: "same@example.com" },
+    { license_id: "new-key", email: "same@example.com" },
+    { license_id: "other-key", email: "other@example.com" },
+  ];
+  fixture.db.activations = [
+    {
+      email: "same@example.com",
+      license_id: "old-key",
+      machine_id: "OLD-DEVICE",
+      expires_at: fixture.now + 1000,
+    },
+    {
+      email: "other@example.com",
+      license_id: "other-key",
+      machine_id: "OTHER-DEVICE",
+      expires_at: fixture.now + 1000,
+    },
+  ];
+  fixture.db.activationHistory = [
+    { license_id: "old-key", email: "same@example.com", expires_at: fixture.now + 1000 },
+  ];
+
+  const response = await fixture.call("/v1/admin/licenses/by-email", {
+    method: "DELETE",
+    token,
+    payload: { emails: [" SAME@example.com ", "same@example.com"] },
+  });
+
+  assert.equal(response.response.status, 200);
+  assert.deepEqual(response.body, {
+    deleted_licenses: 2,
+    cleared_activations: 1,
+  });
+  assert.deepEqual(fixture.db.licenses, [
+    { license_id: "other-key", email: "other@example.com" },
+  ]);
+  assert.deepEqual(
+    fixture.db.activations.map((activation) => activation.email),
+    ["other@example.com"],
+  );
+  assert.deepEqual(
+    fixture.db.activationHistory.map((entry) => entry.license_id),
+    ["old-key"],
+  );
+});
+
+test("adminSelectedEmailCleanup_allowsFreshLicenseForNewDeviceAndRetainsOldReplayGuard", async () => {
+  const fixture = await createFixture();
+  const token = await createAdminSession(fixture);
+  fixture.db.activations = [
+    {
+      email: "shared@example.com",
+      license_id: "old-license",
+      machine_id: "OLD-DEVICE",
+      expires_at: fixture.now + 1000,
+      activation_token: "old-activation-proof",
+    },
+  ];
+  fixture.db.activationHistory = [
+    {
+      license_id: "old-license",
+      email: "shared@example.com",
+      machine_id: "OLD-DEVICE",
+      activated_at: fixture.now - 100,
+      expires_at: fixture.now + 1000,
+      activation_token: "old-activation-proof",
+    },
+  ];
+  const issue = async () =>
+    fixture.call("/v1/admin/licenses/issue", {
+      method: "POST",
+      token,
+      payload: {
+        email: "shared@example.com",
+        machine_id: "NEW-DEVICE",
+        days: 30,
+        operator: "NOC_Operator",
+      },
+    });
+  const activate = async (licenseKey) =>
+    fixture.call("/v1/activate", {
+      method: "POST",
+      payload: {
+        email: "shared@example.com",
+        machine_id: "NEW-DEVICE",
+        license_key: licenseKey,
+      },
+    });
+
+  const firstIssued = await issue();
+  const blocked = await activate(firstIssued.body.license_key);
+  assert.equal(blocked.response.status, 409);
+  assert.match(blocked.body.detail, /Email ini sudah terikat ke perangkat lain/);
+
+  const cleared = await fixture.call("/v1/admin/licenses/by-email", {
+    method: "DELETE",
+    token,
+    payload: { emails: ["shared@example.com"] },
+  });
+  assert.equal(cleared.response.status, 200);
+  assert.equal(fixture.db.activations.length, 0);
+  assert.equal(fixture.db.activationHistory.length, 1);
+
+  const replacementIssued = await issue();
+  const activated = await activate(replacementIssued.body.license_key);
+  const replacementBlob = Buffer.from(
+    replacementIssued.body.license_key.slice("NOC-LIC3-".length),
+    "base64url",
+  );
+  const replacementPayload = JSON.parse(
+    new TextDecoder().decode(replacementBlob.subarray(0, replacementBlob.length - 64)),
+  );
+  assert.equal(activated.response.status, 200);
+  assert.equal(fixture.db.activations[0].machine_id, "NEW-DEVICE");
+  assert.deepEqual(
+    fixture.db.activationHistory.map(({ license_id }) => license_id),
+    ["old-license", replacementPayload.jti],
+  );
+});
+
+test("adminSelectedEmailCleanup_requiresAdminAndValidNonemptyEmails", async () => {
+  const fixture = await createFixture();
+  fixture.db.licenses = [{ license_id: "key", email: "user@example.com" }];
+  const unauthenticated = await fixture.call("/v1/admin/licenses/by-email", {
+    method: "DELETE",
+    payload: { emails: ["user@example.com"] },
+  });
+  assert.equal(unauthenticated.response.status, 401);
+  assert.equal(fixture.db.licenses.length, 1);
+
+  const token = await createAdminSession(fixture);
+  for (const emails of [
+    [],
+    ["not-an-email"],
+    "user@example.com",
+    Array.from({ length: 51 }, (_, index) => `user${index}@example.com`),
+  ]) {
+    const response = await fixture.call("/v1/admin/licenses/by-email", {
+      method: "DELETE",
+      token,
+      payload: { emails },
+    });
+    assert.equal(response.response.status, 400);
+    assert.equal(fixture.db.licenses.length, 1);
+  }
 });

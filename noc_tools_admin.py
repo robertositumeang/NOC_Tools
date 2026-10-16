@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QFrame,
     QFormLayout,
     QHBoxLayout,
@@ -152,6 +153,8 @@ class NocToolsAdminWindow(QMainWindow):
             self.txt_operator,
             self.btn_issue_license,
             self.btn_copy_license,
+            self.btn_copy_pending_license,
+            self.btn_delete_selected_licenses,
             self.btn_delete_expired_licenses,
             self.txt_new_username,
             self.txt_new_display,
@@ -340,6 +343,8 @@ class NocToolsAdminWindow(QMainWindow):
             widget.setEnabled(not busy)
         self.setCursor(Qt.CursorShape.WaitCursor if busy else Qt.CursorShape.ArrowCursor)
         self.lbl_admin_status.setText(message if busy else "")
+        if not busy:
+            self._update_license_selection_actions()
         self.lbl_admin_status.setVisible(busy)
         if busy and self.stack.currentIndex() == 0:
             self.lbl_access_status.setText(message)
@@ -499,6 +504,19 @@ class NocToolsAdminWindow(QMainWindow):
         layout.addWidget(_field_label("ISSUED LICENSES"))
         license_actions = QHBoxLayout()
         license_actions.addStretch()
+        self.btn_copy_pending_license = QPushButton("Copy selected pending key")
+        self.btn_copy_pending_license.setEnabled(False)
+        self.btn_copy_pending_license.clicked.connect(
+            self._copy_selected_pending_license
+        )
+        license_actions.addWidget(self.btn_copy_pending_license)
+        self.btn_delete_selected_licenses = QPushButton("Delete selected emails")
+        self.btn_delete_selected_licenses.setObjectName("danger")
+        self.btn_delete_selected_licenses.setEnabled(False)
+        self.btn_delete_selected_licenses.clicked.connect(
+            self._delete_selected_email_licenses
+        )
+        license_actions.addWidget(self.btn_delete_selected_licenses)
         self.btn_delete_expired_licenses = QPushButton("Delete expired licenses")
         self.btn_delete_expired_licenses.setObjectName("danger")
         self.btn_delete_expired_licenses.clicked.connect(
@@ -523,6 +541,15 @@ class NocToolsAdminWindow(QMainWindow):
             QHeaderView.ResizeMode.Stretch
         )
         self.license_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.license_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.license_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.license_table.itemSelectionChanged.connect(
+            self._update_license_selection_actions
+        )
         layout.addWidget(self.license_table, 1)
         return page
 
@@ -736,12 +763,132 @@ class NocToolsAdminWindow(QMainWindow):
             )
             for column, value in enumerate(values):
                 table_item = QTableWidgetItem(str(value))
+                if column == 0 and status == "not_activated":
+                    license_key = item.get("license_key")
+                    if isinstance(license_key, str) and license_key.startswith(
+                        "NOC-LIC3-"
+                    ):
+                        table_item.setData(Qt.ItemDataRole.UserRole, license_key)
                 if status == "expired":
                     table_item.setForeground(Qt.GlobalColor.red)
                     font = table_item.font()
                     font.setBold(True)
                     table_item.setFont(font)
                 self.license_table.setItem(row, column, table_item)
+        self._update_license_selection_actions()
+
+    def _selected_license_rows(self) -> list[int]:
+        return sorted(
+            {index.row() for index in self.license_table.selectionModel().selectedRows()}
+        )
+
+    def _update_license_selection_actions(self) -> None:
+        rows = self._selected_license_rows()
+        self.btn_delete_selected_licenses.setEnabled(bool(rows))
+        if len(rows) != 1:
+            self.btn_copy_pending_license.setEnabled(False)
+            return
+        status_item = self.license_table.item(rows[0], 6)
+        email_item = self.license_table.item(rows[0], 0)
+        pending_key = (
+            email_item.data(Qt.ItemDataRole.UserRole)
+            if email_item is not None
+            else None
+        )
+        self.btn_copy_pending_license.setEnabled(
+            status_item is not None
+            and status_item.text() == "NOT ACTIVATED"
+            and isinstance(pending_key, str)
+            and pending_key.startswith("NOC-LIC3-")
+        )
+
+    def _copy_selected_pending_license(self) -> None:
+        rows = self._selected_license_rows()
+        if len(rows) != 1:
+            self.lbl_license_status.setText("Select one unactivated license first.")
+            return
+        status_item = self.license_table.item(rows[0], 6)
+        email_item = self.license_table.item(rows[0], 0)
+        license_key = (
+            email_item.data(Qt.ItemDataRole.UserRole)
+            if email_item is not None
+            else None
+        )
+        if (
+            status_item is None
+            or status_item.text() != "NOT ACTIVATED"
+            or not isinstance(license_key, str)
+            or not license_key.startswith("NOC-LIC3-")
+        ):
+            self.lbl_license_status.setText(
+                "Only an unactivated license key can be copied again."
+            )
+            return
+        self.txt_license_key.setText(license_key)
+        if QApplication.clipboard():
+            QApplication.clipboard().setText(license_key)
+        self.lbl_license_status.setText("Unactivated license key copied.")
+
+    def _delete_selected_email_licenses(self) -> None:
+        emails = sorted(
+            {
+                self.license_table.item(row, 0).text().strip().casefold()
+                for row in self._selected_license_rows()
+                if self.license_table.item(row, 0) is not None
+                and self.license_table.item(row, 0).text().strip()
+            }
+        )
+        if not emails:
+            self.lbl_license_status.setText("Select one or more email rows to delete.")
+            return
+        if len(emails) > 50:
+            self.lbl_license_status.setText(
+                "Select no more than 50 email addresses at a time."
+            )
+            return
+        email_list = "\n".join(emails)
+        confirmation = QMessageBox.question(
+            self,
+            "Delete selected email licenses",
+            (
+                f"Delete all issued license records for {len(emails)} selected "
+                f"email(s) and clear their current device bindings?\n\n{email_list}\n\n"
+                "Activation history will be retained to prevent old license keys "
+                "from being reused. Issue a new key after clearing a device binding."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            api = self._require_api()
+        except WorkerApiError as error:
+            self.lbl_license_status.setText(f"Selected emails were not deleted: {error}")
+            QMessageBox.warning(self, "Unable to delete selected emails", str(error))
+            return
+
+        def on_success(result: object) -> None:
+            deleted = result["deleted_licenses"]
+            cleared = result["cleared_activations"]
+            self.lbl_license_status.setText(
+                f"Deleted {deleted} issued license record(s); "
+                f"cleared {cleared} current device binding(s)."
+            )
+            self._request_after_finished = self._refresh_licenses
+
+        def on_error(message: str) -> None:
+            self.lbl_license_status.setText(
+                f"Selected emails were not deleted: {message}"
+            )
+            QMessageBox.warning(self, "Unable to delete selected emails", message)
+
+        self._run_request(
+            lambda: api.delete_licenses_by_email(emails),
+            on_success,
+            busy_message="Deleting selected email licenses...",
+            on_error=on_error,
+        )
 
     @staticmethod
     def _format_license_timestamp(timestamp: object) -> str:

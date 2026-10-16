@@ -255,6 +255,18 @@ class NocAdminApi:
             "/v1/admin/licenses/expired",
             method="DELETE",
         )
+        return self._license_deletion_counts(result)
+
+    def delete_licenses_by_email(self, emails: list[str]) -> dict[str, int]:
+        result = self._request(
+            "/v1/admin/licenses/by-email",
+            method="DELETE",
+            payload={"emails": emails},
+        )
+        return self._license_deletion_counts(result)
+
+    @staticmethod
+    def _license_deletion_counts(result: dict[str, Any]) -> dict[str, int]:
         deleted_licenses = result.get("deleted_licenses")
         cleared_activations = result.get("cleared_activations")
         if (
@@ -263,9 +275,7 @@ class NocAdminApi:
             or type(cleared_activations) is not int
             or cleared_activations < 0
         ):
-            raise WorkerApiError(
-                "Respons penghapusan lisensi kedaluwarsa tidak valid."
-            )
+            raise WorkerApiError("Respons penghapusan lisensi tidak valid.")
         return {
             "deleted_licenses": deleted_licenses,
             "cleared_activations": cleared_activations,

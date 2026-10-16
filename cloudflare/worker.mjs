@@ -646,14 +646,7 @@ async function issueAdminLicense(request, env, publicKeyHex, nowSeconds) {
     type: licenseType,
     op: operator,
   };
-  const payloadBytes = encoder.encode(JSON.stringify(payload));
-  const signature = new Uint8Array(
-    await crypto.subtle.sign("Ed25519", signingKey, payloadBytes),
-  );
-  const signedBlob = new Uint8Array(payloadBytes.length + signature.length);
-  signedBlob.set(payloadBytes);
-  signedBlob.set(signature, payloadBytes.length);
-  const licenseKey = `${LICENSE_PREFIX}${bytesToBase64Url(signedBlob)}`;
+  const licenseKey = await signIssuedLicense(payload, signingKey);
   await requireDatabase(env)
     .prepare(
       `INSERT INTO license_issues
@@ -665,7 +658,18 @@ async function issueAdminLicense(request, env, publicKeyHex, nowSeconds) {
   return { license_key: licenseKey, email, machine_id: machineId, days, issued_at: issuedAt };
 }
 
-async function listAdminLicenses(request, env, nowSeconds) {
+async function signIssuedLicense(payload, signingKey) {
+  const payloadBytes = encoder.encode(JSON.stringify(payload));
+  const signature = new Uint8Array(
+    await crypto.subtle.sign("Ed25519", signingKey, payloadBytes),
+  );
+  const signedBlob = new Uint8Array(payloadBytes.length + signature.length);
+  signedBlob.set(payloadBytes);
+  signedBlob.set(signature, payloadBytes.length);
+  return `${LICENSE_PREFIX}${bytesToBase64Url(signedBlob)}`;
+}
+
+async function listAdminLicenses(request, env, publicKeyHex, nowSeconds) {
   await getAdminFromSession(request, env, nowSeconds);
   const result = await requireDatabase(env)
     .prepare(
@@ -686,7 +690,66 @@ async function listAdminLicenses(request, env, nowSeconds) {
     )
     .bind(nowSeconds())
     .all();
-  return { licenses: result.results || [] };
+  const licenses = result.results || [];
+  const pendingLicenses = licenses.filter(
+    (license) => license.status === "not_activated",
+  );
+  if (pendingLicenses.length === 0) return { licenses };
+
+  const signingKey = await importSigningKey(
+    env.LICENSE_SIGNING_PRIVATE_KEY,
+    publicKeyHex,
+  );
+  const pendingKeys = await Promise.all(
+    pendingLicenses.map((license) =>
+      signIssuedLicense(
+        {
+          v: 3,
+          email: license.email,
+          mid: license.machine_id,
+          days: license.days_valid,
+          jti: license.license_id,
+          iat: license.issued_at,
+          type: license.license_type,
+          op: license.operator,
+        },
+        signingKey,
+      ),
+    ),
+  );
+  for (const [index, license] of pendingLicenses.entries()) {
+    license.license_key = pendingKeys[index];
+  }
+  return { licenses };
+}
+
+async function deleteAdminLicensesByEmail(request, env, nowSeconds) {
+  await getAdminFromSession(request, env, nowSeconds);
+  const body = await readJsonBody(request);
+  if (!Array.isArray(body.emails) || body.emails.length < 1 || body.emails.length > 50) {
+    throw new ApiError("Pilih satu hingga 50 alamat email untuk dihapus.");
+  }
+  const emails = [...new Set(body.emails.map((value) => normalizeEmail(value)))];
+  const placeholders = emails.map(() => "?").join(", ");
+  const database = requireDatabase(env);
+  const results = await database.batch([
+    database
+      .prepare(
+        `DELETE FROM license_issues
+         WHERE email COLLATE NOCASE IN (${placeholders})`,
+      )
+      .bind(...emails),
+    database
+      .prepare(
+        `DELETE FROM license_activations
+         WHERE email COLLATE NOCASE IN (${placeholders})`,
+      )
+      .bind(...emails),
+  ]);
+  return {
+    deleted_licenses: results[0]?.meta?.changes || 0,
+    cleared_activations: results[1]?.meta?.changes || 0,
+  };
 }
 
 async function deleteExpiredAdminLicenses(request, env, nowSeconds) {
@@ -930,12 +993,17 @@ export async function handleRequest(
     } else if (path === "/v1/admin/licenses/issue" && method === "POST") {
       result = await issueAdminLicense(request, env, publicKeyHex, nowSeconds);
     } else if (path === "/v1/admin/licenses" && method === "GET") {
-      result = await listAdminLicenses(request, env, nowSeconds);
+      result = await listAdminLicenses(request, env, publicKeyHex, nowSeconds);
     } else if (
       path === "/v1/admin/licenses/expired" &&
       method === "DELETE"
     ) {
       result = await deleteExpiredAdminLicenses(request, env, nowSeconds);
+    } else if (
+      path === "/v1/admin/licenses/by-email" &&
+      method === "DELETE"
+    ) {
+      result = await deleteAdminLicensesByEmail(request, env, nowSeconds);
     } else if (
       path === "/v1/activate" ||
       path === "/v1/login" ||

@@ -244,3 +244,46 @@ def test_admin_client_rejects_invalid_expired_license_cleanup_counts(
 
     with pytest.raises(WorkerApiError, match="Respons penghapusan lisensi"):
         api.delete_expired_licenses()
+
+
+def test_admin_client_deletes_selected_email_licenses_and_validates_counts(
+    monkeypatch,
+):
+    calls = []
+    api = NocAdminApi("https://example.workers.dev")
+    api._token = "admin-session"
+    monkeypatch.setattr(
+        cloudflare_api,
+        "request_json",
+        lambda path, **kwargs: (
+            calls.append((path, kwargs))
+            or {"deleted_licenses": 2, "cleared_activations": 1}
+        ),
+    )
+
+    assert api.delete_licenses_by_email(["user@example.com"]) == {
+        "deleted_licenses": 2,
+        "cleared_activations": 1,
+    }
+    assert calls == [
+        (
+            "/v1/admin/licenses/by-email",
+            {
+                "method": "DELETE",
+                "payload": {"emails": ["user@example.com"]},
+                "token": "admin-session",
+                "api_url": "https://example.workers.dev",
+            },
+        )
+    ]
+
+    monkeypatch.setattr(
+        cloudflare_api,
+        "request_json",
+        lambda *args, **kwargs: {
+            "deleted_licenses": -1,
+            "cleared_activations": 0,
+        },
+    )
+    with pytest.raises(WorkerApiError, match="Respons penghapusan lisensi"):
+        api.delete_licenses_by_email(["user@example.com"])

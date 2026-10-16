@@ -100,9 +100,33 @@ class FakeAdminApi:
         }
         return self.deleted_license_counts
 
+    def delete_licenses_by_email(self, emails):
+        self._record_request_thread()
+        normalized_emails = [email.strip().lower() for email in emails]
+        self.calls.append(("delete-licenses-by-email", normalized_emails))
+        selected = set(normalized_emails)
+        deleted = [
+            license_item
+            for license_item in self.licenses
+            if license_item.get("email", "").lower() in selected
+        ]
+        self.licenses = [
+            license_item
+            for license_item in self.licenses
+            if license_item.get("email", "").lower() not in selected
+        ]
+        return {
+            "deleted_licenses": len(deleted),
+            "cleared_activations": sum(
+                license_item.get("status") == "active"
+                for license_item in deleted
+            ),
+        }
+
     def issue_license(self, email, machine_id, days, operator):
         self._record_request_thread()
         self.calls.append(("issue", email, machine_id, days, operator))
+        license_key = "NOC-LIC3-signed-key"
         self.licenses.append(
             {
                 "email": email,
@@ -110,9 +134,11 @@ class FakeAdminApi:
                 "days_valid": days,
                 "operator": operator,
                 "issued_at": 1_700_000_000,
+                "status": "not_activated",
+                "license_key": license_key,
             }
         )
-        return "NOC-LIC3-signed-key"
+        return license_key
 
     def create_user(self, username, display_name, password):
         self._record_request_thread()
@@ -721,6 +747,141 @@ def test_expired_license_cleanup_reports_worker_errors(
     assert "Cloudflare cleanup failed." in window.lbl_license_status.text()
     assert warnings == [
         ("Unable to delete licenses", "Cloudflare cleanup failed.")
+    ]
+    assert window.license_table.rowCount() == 1
+    window.close()
+
+
+def test_pending_license_can_be_copied_again_from_selected_row(
+    monkeypatch, qt_app
+):
+    api = FakeAdminApi()
+    api.is_authenticated = True
+    api.licenses = [
+        {
+            "email": "pending@example.com",
+            "status": "not_activated",
+            "license_key": "NOC-LIC3-pending-recovered-key",
+        },
+        {
+            "email": "active@example.com",
+            "status": "active",
+            "license_key": "NOC-LIC3-active-key",
+        },
+    ]
+    monkeypatch.setattr(noc_tools_admin, "NocAdminApi", lambda _url: api)
+    window = noc_tools_admin.NocToolsAdminWindow()
+    window._api = api
+    window._populate_licenses(api.licenses)
+    assert not window.btn_copy_pending_license.isEnabled()
+
+    window.license_table.selectRow(0)
+    assert window.btn_copy_pending_license.isEnabled()
+    window.btn_copy_pending_license.click()
+
+    assert QApplication.clipboard().text() == "NOC-LIC3-pending-recovered-key"
+    assert "Unactivated license key copied" in window.lbl_license_status.text()
+    window.license_table.selectRow(1)
+    assert not window.btn_copy_pending_license.isEnabled()
+    window._set_busy(True)
+    window._set_busy(False)
+    assert not window.btn_copy_pending_license.isEnabled()
+    window.close()
+
+
+def test_selected_email_cleanup_requires_confirmation_and_preserves_other_rows(
+    monkeypatch, qt_app
+):
+    api = FakeAdminApi()
+    api.is_authenticated = True
+    api.licenses = [
+        {
+            "email": "release@example.com",
+            "machine_id": "OLD-DEVICE",
+            "status": "active",
+        },
+        {
+            "email": "release@example.com",
+            "machine_id": "NOC-NEW-DEVICE",
+            "status": "not_activated",
+        },
+        {
+            "email": "keep@example.com",
+            "machine_id": "OTHER-DEVICE",
+            "status": "active",
+        },
+    ]
+    confirmations = iter(
+        (QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+    )
+    prompts = []
+    monkeypatch.setattr(noc_tools_admin, "NocAdminApi", lambda _url: api)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: (
+            prompts.append(args[1:3]) or next(confirmations)
+        ),
+    )
+    window = noc_tools_admin.NocToolsAdminWindow()
+    window._api = api
+    window._populate_licenses(api.licenses)
+
+    window.license_table.selectRow(0)
+    window._delete_selected_email_licenses()
+    assert api.calls == []
+    assert window.license_table.rowCount() == 3
+
+    window._delete_selected_email_licenses()
+    wait_for_admin_tasks(qt_app, window)
+
+    assert api.calls == [
+        ("delete-licenses-by-email", ["release@example.com"])
+    ]
+    assert window.license_table.rowCount() == 1
+    assert window.license_table.item(0, 0).text() == "keep@example.com"
+    assert "cleared 1 current device binding" in window.lbl_license_status.text()
+    assert "release@example.com" in prompts[0][1]
+    window.close()
+
+
+def test_selected_email_cleanup_reports_worker_errors(
+    monkeypatch, qt_app
+):
+    class FailedApi(FakeAdminApi):
+        def delete_licenses_by_email(self, emails):
+            self._record_request_thread()
+            raise WorkerApiError("Unable to release this device binding.")
+
+    api = FailedApi()
+    api.is_authenticated = True
+    api.licenses = [{"email": "release@example.com", "status": "active"}]
+    warnings = []
+    monkeypatch.setattr(noc_tools_admin, "NocAdminApi", lambda _url: api)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args: warnings.append(args[1:3])
+    )
+    window = noc_tools_admin.NocToolsAdminWindow()
+    window._api = api
+    window._populate_licenses(api.licenses)
+    window.license_table.selectRow(0)
+
+    window._delete_selected_email_licenses()
+    wait_for_admin_tasks(qt_app, window)
+
+    assert "Unable to release this device binding." in (
+        window.lbl_license_status.text()
+    )
+    assert warnings == [
+        (
+            "Unable to delete selected emails",
+            "Unable to release this device binding.",
+        )
     ]
     assert window.license_table.rowCount() == 1
     window.close()
