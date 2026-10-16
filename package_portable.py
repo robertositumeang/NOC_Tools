@@ -11,10 +11,11 @@ PORTABLE_FILES = (
     ("dist/NOC Tools.exe", "NOC Tools.exe"),
     ("dist/bin/NOC Web Tools.exe", "bin/NOC Web Tools.exe"),
     ("dist/bin/Capture_Modem.exe", "bin/Capture_Modem.exe"),
-    ("dist/data/Site Management.xlsx", "data/Site Management.xlsx"),
     ("app_icon.ico", "app_icon.ico"),
     ("PORTABLE_README.txt", "README_PORTABLE.txt"),
 )
+
+
 def build_portable_package(
     project_root: Path,
     output_path: Path,

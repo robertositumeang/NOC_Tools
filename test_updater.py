@@ -137,6 +137,27 @@ class UpdaterGitHubTests(unittest.TestCase):
         self.assertIsNone(info["asset_name"])
         self.assertEqual(info["modular_items"], [])
 
+    @patch("updater.requests.get")
+    def test_check_github_release_does_not_track_external_master_workbook(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v1.0.1",
+            "assets": [
+                {
+                    "name": "Site Management.xlsx",
+                    "browser_download_url": "https://example.test/Site-Management.xlsx",
+                    "size": 573222,
+                }
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        info = check_github_release("owner/repo")
+
+        self.assertFalse(info["has_update"])
+        self.assertEqual(info["modular_items"], [])
+
     def test_repo_settings(self):
         orig = get_github_repo()
         set_github_repo("test-owner/test-repo")

@@ -141,7 +141,6 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
         "NOC Tools.exe": Path("NOC Tools.exe"),
         "Capture_Modem.exe": Path("bin/Capture_Modem.exe"),
         "NOC Web Tools.exe": Path("bin/NOC Web Tools.exe"),
-        "Site Management.xlsx": Path("data/Site Management.xlsx"),
     }
     RETIRED_ASSETS = {
         "noc web dashboard.exe",

@@ -104,20 +104,24 @@ from PIL import Image, ImageOps, ImageStat
 
 
 DEFAULT_MASTER_FILENAME = "Site Management -  20260927_160847.xlsx"
+
+
+def _resolve_master_source_dir(
+    base_dir: Path,
+    resource_dir: Path,
+    is_frozen: bool,
+) -> Path:
+    return resource_dir / "site_management" if is_frozen else base_dir
+
+
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parent
     RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
-    # Cek folder data eksternal di samping EXE lebih dulu, baru internal
-    if (BASE_DIR / "data").is_dir() and any((BASE_DIR / "data").glob("Site Management*.xlsx")):
-        MASTER_SOURCE_DIR = BASE_DIR / "data"
-    elif any(BASE_DIR.glob("Site Management*.xlsx")):
-        MASTER_SOURCE_DIR = BASE_DIR
-    else:
-        MASTER_SOURCE_DIR = RESOURCE_DIR / "site_management"
+    MASTER_SOURCE_DIR = _resolve_master_source_dir(BASE_DIR, RESOURCE_DIR, True)
 else:
     BASE_DIR = Path(__file__).resolve().parent
     RESOURCE_DIR = BASE_DIR
-    MASTER_SOURCE_DIR = BASE_DIR
+    MASTER_SOURCE_DIR = _resolve_master_source_dir(BASE_DIR, RESOURCE_DIR, False)
 
 APP_ICON_PATH = RESOURCE_DIR / "app_icon.ico"
 # Cari folder cctv_report: di samping noc_massive/ (dev) atau di MEIPASS (frozen)

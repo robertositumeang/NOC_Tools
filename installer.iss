@@ -40,9 +40,6 @@ Source: "dist\bin\NOC Web Tools.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 ; Standalone PyQt/Playwright application launched from the main app.
 Source: "dist\bin\Capture_Modem.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
-; External data folder (Site Management, etc.)
-Source: "dist\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
-
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"

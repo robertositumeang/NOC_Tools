@@ -1,7 +1,8 @@
 NOC TOOLS - PORTABLE WINDOWS PACKAGE
 
 1. Extract the entire ZIP to a writable folder on a Windows 10/11 x64 laptop.
-2. Keep NOC Tools.exe, bin, data, and app_icon.ico together.
+2. Keep NOC Tools.exe, bin, and app_icon.ico together. The default Site
+   Management database is bundled inside NOC Tools.exe.
 3. Start the operator application by opening NOC Tools.exe.
 4. Microsoft Edge WebView2 Runtime and an internet connection are required.
    Install or repair the Evergreen WebView2 Runtime if the web workspaces

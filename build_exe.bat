@@ -49,14 +49,6 @@ if errorlevel 1 (
 )
 echo [OK] Capture Modem berhasil dibuild.
 
-:: Copy the same current master workbook used by the desktop build
-if not exist "dist\data" mkdir "dist\data"
-copy /y "%MASTER_FILE%" "dist\data\Site Management.xlsx" >nul
-if errorlevel 1 (
-    echo [ERROR] Gagal menyalin Site Management ke dist\data.
-    exit /b 1
-)
-
 :: Remove retired executables so old copies cannot leak into a laptop package
 if exist "dist\bin\NOC VPN Manager.exe" del /f /q "dist\bin\NOC VPN Manager.exe"
 if exist "dist\bin\NOC Web Dashboard.exe" del /f /q "dist\bin\NOC Web Dashboard.exe"
