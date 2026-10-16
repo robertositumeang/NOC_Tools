@@ -81,31 +81,46 @@ async function loadDbStatus() {
 }
 
 function updateDbCard(d) {
-  const txt   = document.getElementById("dbStatusText");
+  const badge = document.getElementById("dbStatusBadge");
   const count = document.getElementById("dbCountText");
 
   if (d.loading) {
-    txt.innerHTML = `<span class="spinner"></span> <span class="status-loading">Memuat dari Google Sheets...</span>`;
-    count.textContent = "Mohon tunggu...";
+    if (badge) {
+      badge.className = "db-badge badge-loading";
+      badge.innerHTML = `<span class="spinner"></span> Memuat...`;
+    }
+    if (count) count.textContent = "Sedang mengambil data dari Google Sheets...";
   } else if (d.error) {
-    txt.innerHTML = `<span class="status-error">❌ Error: ${d.error}</span>`;
-    count.textContent = "Gagal memuat database.";
+    if (badge) {
+      badge.className = "db-badge badge-error";
+      badge.textContent = "Gagal Terhubung";
+    }
+    if (count) count.textContent = d.error;
   } else if (d.loaded) {
-    txt.innerHTML = `<span class="status-loaded">✅ Terhubung</span>`;
+    if (badge) {
+      badge.className = "db-badge badge-connected";
+      badge.textContent = "Terhubung";
+    }
     const at = d.loaded_at ? new Date(d.loaded_at * 1000).toLocaleTimeString("id-ID") : "";
-    count.textContent = `${d.count.toLocaleString("id-ID")} tiket dimuat` + (at ? ` (${at})` : "");
+    if (count) count.textContent = `${d.count.toLocaleString("id-ID")} tiket database dimuat` + (at ? ` (${at})` : "");
     setStatus(`Database dimuat: ${d.count.toLocaleString("id-ID")} tiket`);
   } else {
-    txt.innerHTML = `<span class="status-idle">⏳ Belum dimuat</span>`;
-    count.textContent = "Klik Refresh DB untuk memuat.";
+    if (badge) {
+      badge.className = "db-badge badge-idle";
+      badge.textContent = "Belum dimuat";
+    }
+    if (count) count.textContent = "Klik Refresh DB untuk memuat data.";
   }
 }
 
 function setDbCardError(msg) {
-  const txt   = document.getElementById("dbStatusText");
+  const badge = document.getElementById("dbStatusBadge");
   const count = document.getElementById("dbCountText");
-  txt.innerHTML = `<span class="status-error">❌ Error</span>`;
-  count.textContent = msg;
+  if (badge) {
+    badge.className = "db-badge badge-error";
+    badge.textContent = "Error";
+  }
+  if (count) count.textContent = msg;
   setStatus("Gagal memuat DB: " + msg, false);
 }
 
@@ -121,12 +136,18 @@ function updateUploadCards(d) {
 // ── Refresh DB ────────────────────────────────────────────────────
 async function refreshDb() {
   const btn = document.getElementById("refreshDbBtn");
-  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Memuat...`; }
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Memuat...`;
+  }
 
-  const txt   = document.getElementById("dbStatusText");
+  const badge = document.getElementById("dbStatusBadge");
   const count = document.getElementById("dbCountText");
-  txt.innerHTML = `<span class="spinner"></span> <span class="status-loading">Memuat dari Google Sheets...</span>`;
-  count.textContent = "Mohon tunggu, ini mungkin memerlukan beberapa detik...";
+  if (badge) {
+    badge.className = "db-badge badge-loading";
+    badge.innerHTML = `<span class="spinner"></span> Memuat...`;
+  }
+  if (count) count.textContent = "Sedang sinkronisasi data dari Google Sheets...";
 
   setStatus("Memuat ulang database TT...");
 
@@ -139,7 +160,10 @@ async function refreshDb() {
   } catch (e) {
     setDbCardError(e.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = "🔄 Refresh DB"; }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh DB`;
+    }
   }
 }
 
@@ -176,36 +200,35 @@ function markUploadLoaded(type, filename, count, fileCount) {
   const fnDiv   = document.getElementById(`${type}Filename`);
   const fnText  = document.getElementById(`${type}FnText`);
   const cntText = document.getElementById(`${type}CountText`);
-  const icon    = document.getElementById(`${type}Icon`);
+  const subText = document.getElementById(`${type}SubText`);
 
-  card.classList.add("loaded");
-  fnDiv.classList.remove("hidden");
+  if (card) card.classList.add("loaded");
+  if (fnDiv) fnDiv.classList.remove("hidden");
+  if (subText) subText.classList.add("hidden");
+
   // If multiple files, show count badge
   if (fileCount && fileCount > 1) {
-    fnText.textContent = `${fileCount} files`;
-    cntText.textContent = `${count.toLocaleString("id-ID")} rows total`;
+    if (fnText) fnText.textContent = `${fileCount} files (${filename})`;
+    if (cntText) cntText.textContent = `• ${count.toLocaleString("id-ID")} rows total`;
   } else {
-    fnText.textContent = filename;
-    cntText.textContent = `${count.toLocaleString("id-ID")} rows`;
+    if (fnText) fnText.textContent = filename;
+    if (cntText) cntText.textContent = `• ${count.toLocaleString("id-ID")} rows`;
   }
-  if (icon) icon.textContent = "✅";
 }
 
 async function uploadFiles(type, files) {
   for (const f of files) {
     const suffix = f.name.split(".").pop().toLowerCase();
     if (!["xlsx","xlsm","xls"].includes(suffix)) {
-      alert(`File '${f.name}' must be .xlsx, .xlsm, or .xls format`);
+      alert(`File '${f.name}' harus berformat .xlsx, .xlsm, atau .xls`);
       return;
     }
   }
 
   const card = document.getElementById(`${type}Card`);
-  const icon = document.getElementById(`${type}Icon`);
   card.style.opacity = ".6";
   card.style.pointerEvents = "none";
-  if (icon) icon.textContent = "⏳";
-  setStatus(`Uploading ${files.length} file(s)...`);
+  setStatus(`Mengupload ${files.length} file...`);
 
   const form = new FormData();
   for (const f of files) form.append("files", f);
@@ -219,8 +242,8 @@ async function uploadFiles(type, files) {
     const d = await res.json();
     markUploadLoaded(type, d.filename, d.count, d.file_count);
     const label = d.file_count > 1
-      ? `${d.file_count} files uploaded (${d.count.toLocaleString("id-ID")} rows total)`
-      : `${d.filename} uploaded (${d.count.toLocaleString("id-ID")} rows)`;
+      ? `${d.file_count} files berhasil diupload (${d.count.toLocaleString("id-ID")} baris total)`
+      : `${d.filename} berhasil diupload (${d.count.toLocaleString("id-ID")} baris)`;
     setStatus(label);
 
     // Reset results when new file uploaded
@@ -230,9 +253,8 @@ async function uploadFiles(type, files) {
     const status = await apiFetch("/api/db-status");
     checkReady(status);
   } catch (e) {
-    if (icon) icon.textContent = type === "down" ? "📡" : "🖥️";
-    setStatus("Upload failed: " + e.message, false);
-    alert("Upload failed: " + e.message);
+    setStatus("Upload gagal: " + e.message, false);
+    alert("Upload gagal: " + e.message);
   } finally {
     card.style.opacity = "";
     card.style.pointerEvents = "";
@@ -241,20 +263,20 @@ async function uploadFiles(type, files) {
 
 // ── Ready Check ───────────────────────────────────────────────────
 function checkReady(d) {
-  const runBtn = document.getElementById("runBtn");
-  const hint   = document.getElementById("runHint");
-  const ready  = d.loaded && (d.down_count > 0 || d.unmon_count > 0);
+  const runBtn  = document.getElementById("runBtn");
+  const hintTxt = document.getElementById("runHintText");
+  const ready   = d.loaded && (d.down_count > 0 || d.unmon_count > 0);
   if (runBtn) runBtn.disabled = !ready;
 
   if (!d.loaded) {
-    hint.textContent = "Pastikan database TT sudah dimuat terlebih dahulu.";
+    if (hintTxt) hintTxt.textContent = "Pastikan database TT sudah termuat terlebih dahulu.";
   } else if (d.down_count === 0 && d.unmon_count === 0) {
-    hint.textContent = "Upload minimal satu file incident (Site Down atau Site Unmonitor).";
+    if (hintTxt) hintTxt.textContent = "Upload minimal satu file incident (Site Down atau Site Unmonitor).";
   } else {
     const parts = [];
     if (d.down_count > 0)  parts.push(`${d.down_count.toLocaleString("id-ID")} site down`);
     if (d.unmon_count > 0) parts.push(`${d.unmon_count.toLocaleString("id-ID")} site unmonitor`);
-    hint.textContent = `Siap: ${parts.join(", ")}. Klik Jalankan untuk memulai audit.`;
+    if (hintTxt) hintTxt.textContent = `Siap dicek: ${parts.join(", ")}. Klik Jalankan untuk memulai audit.`;
   }
 }
 
@@ -276,7 +298,7 @@ async function runCheck() {
     alert("Pengecekan gagal: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = "▶ Jalankan Pengecekan";
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Jalankan Pengecekan`;
   }
 }
 
@@ -539,6 +561,8 @@ function renderPagination(total, offset) {
 }
 
 // ── Export ────────────────────────────────────────────────────────
+let _lastExportedPath = "";
+
 async function exportGaps(format = "csv") {
   const isCsv = format === "csv";
   const ext = isCsv ? "csv" : "xlsx";
@@ -551,19 +575,49 @@ async function exportGaps(format = "csv") {
       throw new Error(j.detail || `HTTP ${res.status}`);
     }
     const d = await res.json();
-    setStatus(`Export berhasil: ${d.path}`);
+    _lastExportedPath = d.path || "";
+    setStatus(`Export berhasil disimpan: ${d.path}`);
 
-    const wantOpen = confirm(
-      `File berhasil disimpan di folder Downloads!\n\nNama file:\n${d.filename}\n\nLokasi lengkap:\n${d.path}\n\nApakah Anda ingin membuka folder Downloads sekarang?`
-    );
-    if (wantOpen) {
-      await fetch("/api/open-downloads", { method: "POST" });
-    }
+    // Show custom modern Export Success modal
+    showExportSuccessModal(d.filename, d.path);
   } catch (e) {
     setStatus("Export gagal: " + e.message, false);
     alert("Export gagal: " + e.message);
   }
 }
+
+function showExportSuccessModal(filename, path) {
+  const box = document.getElementById("exportFilePathBox");
+  if (box) box.textContent = path || filename;
+  const modal = document.getElementById("exportSuccessModal");
+  if (modal) modal.classList.add("show");
+}
+
+function closeExportSuccessModal() {
+  const modal = document.getElementById("exportSuccessModal");
+  if (modal) modal.classList.remove("show");
+}
+
+async function openExportedFileLocation() {
+  try {
+    const url = _lastExportedPath 
+      ? `/api/open-downloads?path=${encodeURIComponent(_lastExportedPath)}`
+      : `/api/open-downloads`;
+    await fetch(url, { method: "POST" });
+    closeExportSuccessModal();
+  } catch (e) {
+    alert("Gagal membuka folder: " + e.message);
+  }
+}
+
+async function openDownloadsFolder() {
+  try {
+    await fetch("/api/open-downloads", { method: "POST" });
+  } catch (e) {
+    alert("Gagal membuka folder Downloads: " + e.message);
+  }
+}
+
 
 // ── Checkbox Selection ────────────────────────────────────────────
 function toggleAllGaps(checked) {

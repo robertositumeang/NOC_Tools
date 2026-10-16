@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -382,19 +384,28 @@ async def export_and_save(fmt: str) -> dict:
 
 
 @app.post("/api/open-downloads")
-async def open_downloads_folder() -> dict:
-    dl = Path.home() / "Downloads"
-    if not dl.exists():
-        dl = Path.home() / "Unduhan"
-    if not dl.exists():
-        dl = Path.home()
+@app.get("/api/open-downloads")
+async def open_downloads_folder(path: str = Query(default="")) -> dict:
     try:
-        if os.name == "nt":
-            os.startfile(str(dl))
-            return {"ok": True, "path": str(dl)}
+        if path:
+            p = Path(path)
+            if p.exists() and p.is_file():
+                subprocess.Popen(["explorer.exe", f"/select,{p}"])
+                return {"ok": True, "path": str(p), "selected": True}
+            elif p.exists():
+                subprocess.Popen(["explorer.exe", str(p)])
+                return {"ok": True, "path": str(p)}
+
+        dl = Path.home() / "Downloads"
+        if not dl.exists():
+            dl = Path.home() / "Unduhan"
+        if not dl.exists():
+            dl = Path.home()
+
+        subprocess.Popen(["explorer.exe", str(dl)])
+        return {"ok": True, "path": str(dl)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "path": str(dl)}
 
 
 
