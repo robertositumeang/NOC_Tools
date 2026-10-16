@@ -65,8 +65,6 @@ async function apiFetch(url, opts = {}) {
 }
 
 // ── DB Status ─────────────────────────────────────────────────────
-let _dbPollTimer = null;
-
 function stopDbPolling() {
   if (_dbPollTimer) {
     clearInterval(_dbPollTimer);

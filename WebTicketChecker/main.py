@@ -46,10 +46,10 @@ def _wait_for_server(port: int, timeout: float = 15.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
                 return True
         except OSError:
-            time.sleep(0.1)
+            time.sleep(0.03)
     return False
 
 
