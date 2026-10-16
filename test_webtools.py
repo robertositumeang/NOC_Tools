@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
 import desktop_app
+from noc_brand import DARK_THEME, LIGHT_THEME, THEMES, theme_stylesheet
 from WebTools import main as web_tools_main
 from WebTicketChecker import server as ticket_checker_server
 from WebTools.server import app
@@ -43,6 +44,56 @@ def test_ticket_checker_api_and_static_assets_are_mounted() -> None:
     assert asset.status_code == 200
     assert "<svg" in asset.text
     assert client.get("/ticket-checker/api/summary").status_code == 404
+
+
+def test_shared_theme_stylesheet_uses_solid_card_colors() -> None:
+    for theme_name in (DARK_THEME, LIGHT_THEME):
+        stylesheet = theme_stylesheet(theme_name)
+        card_color = THEMES[theme_name]["card_bg"]
+        alternate_color = THEMES[theme_name]["card_alt"]
+
+        assert f"background: {card_color};" in stylesheet
+        assert f"background: {alternate_color};" in stylesheet
+        assert f"{card_color}E6" not in stylesheet
+        assert f"{card_color}EA" not in stylesheet
+        assert f"{alternate_color}F5" not in stylesheet
+
+
+def test_ticket_checker_defaults_apps_script_url_when_unconfigured(monkeypatch) -> None:
+    expected_url = (
+        "https://script.google.com/macros/s/"
+        "AKfycbwTr7k16fRCIe6v6is3EnYXDfiXHaCi-SHKdS4skJ0dBQqqhkCCKiNtyaazhjWLbG6LjQ/exec"
+    )
+    monkeypatch.setitem(
+        ticket_checker_server._state,
+        "apps_script_url",
+        ticket_checker_server._initial_apps_script_url({}),
+    )
+
+    client = TestClient(app)
+    settings = client.get("/ticket-checker/api/sheets-settings")
+    script = client.get("/ticket-checker/static/app.js").text
+
+    assert ticket_checker_server.DEFAULT_APPS_SCRIPT_URL == expected_url
+    assert settings.status_code == 200
+    assert settings.json() == {"apps_script_url": expected_url}
+    assert 'if (inp && d.apps_script_url) inp.value = d.apps_script_url;' in script
+
+
+def test_ticket_checker_preserves_saved_apps_script_url(monkeypatch) -> None:
+    saved_url = "https://script.google.com/macros/s/custom-deployment/exec"
+    monkeypatch.setitem(
+        ticket_checker_server._state,
+        "apps_script_url",
+        ticket_checker_server._initial_apps_script_url(
+            {"apps_script_url": saved_url}
+        ),
+    )
+
+    settings = TestClient(app).get("/ticket-checker/api/sheets-settings")
+
+    assert settings.status_code == 200
+    assert settings.json() == {"apps_script_url": saved_url}
 
 
 def test_ticket_checker_preload_runs_in_combined_lifespan(monkeypatch) -> None:

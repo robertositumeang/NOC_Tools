@@ -225,7 +225,7 @@ def test_license_save_and_load(tmp_path, monkeypatch):
         (
             None,
             None,
-            "https://noc-license-api.pasitumengroberto.workers.dev",
+            "https://noc-license-api.pasitumeangroberto.workers.dev",
         ),
         (
             "https://custom-license.example.com",

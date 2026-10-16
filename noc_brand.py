@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 
 
 APP_NAME = "NOC Tools"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 DARK_THEME = "Midnight Neon (Dark)"
 LIGHT_THEME = "Apple Modern (Light)"
 
@@ -268,7 +268,7 @@ def theme_stylesheet(theme_name: str) -> str:
         }}
         QWidget {{ color: {theme["text"]}; }}
         QFrame#card, QGroupBox {{
-            background: {theme["card_bg"]}E6;
+            background: {theme["card_bg"]};
             border: 1px solid {theme["border"]};
             border-radius: 12px;
         }}
@@ -336,14 +336,14 @@ def theme_stylesheet(theme_name: str) -> str:
         }}
         QPushButton#accentBtn:hover {{ background: {theme["accent_hover"]}; }}
         QPushButton#appChoice {{
-            background: {theme["card_bg"]}EA;
+            background: {theme["card_bg"]};
             text-align: left;
             padding: 16px 18px;
             border: 1px solid {theme["border"]};
             border-radius: 14px;
         }}
         QPushButton#appChoice:hover {{
-            background: {theme["card_alt"]}F5;
+            background: {theme["card_alt"]};
             border-color: {theme["accent"]};
         }}
         QPushButton#appChoice QLabel#appChoiceIndex {{

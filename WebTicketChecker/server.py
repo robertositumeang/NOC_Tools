@@ -72,6 +72,10 @@ _CACHE_DIR = Path.home() / ".noc_cache" / "ticket_checker"
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _SETTINGS_FILE = _CACHE_DIR / "sheets_settings.json"
+DEFAULT_APPS_SCRIPT_URL = (
+    "https://script.google.com/macros/s/"
+    "AKfycbwTr7k16fRCIe6v6is3EnYXDfiXHaCi-SHKdS4skJ0dBQqqhkCCKiNtyaazhjWLbG6LjQ/exec"
+)
 
 
 def _load_settings() -> dict:
@@ -92,9 +96,17 @@ def _save_settings(data: dict) -> None:
 
 _persisted = _load_settings()
 
+
+def _initial_apps_script_url(settings: dict) -> str:
+    saved_url = settings.get("apps_script_url")
+    if isinstance(saved_url, str) and saved_url.strip():
+        return saved_url
+    return DEFAULT_APPS_SCRIPT_URL
+
+
 _state: dict[str, Any] = {
     "spreadsheet_url": DEFAULT_SPREADSHEET_URL,
-    "apps_script_url": _persisted.get("apps_script_url", ""),
+    "apps_script_url": _initial_apps_script_url(_persisted),
     "db_rows": [],
     "db_loaded": False,
     "db_loading": False,
