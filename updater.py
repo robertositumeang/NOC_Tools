@@ -159,11 +159,14 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
         canonical_name = ASSET_NAME_ALIASES.get(a_name.lower(), a_name)
         a_url = a.get("browser_download_url")
         a_size = a.get("size", 0)
+        asset_stem = re.sub(r"[^a-z0-9]", "", Path(a_name).stem.lower())
+        is_setup_installer = asset_stem.startswith("noctoolssetup")
 
         # Main launcher fallback
         if (
             canonical_name.lower().endswith(".exe")
             and "noc" in canonical_name.lower()
+            and not is_setup_installer
             and canonical_name.lower() != "noc web tools.exe"
             and canonical_name.lower() not in RETIRED_ASSETS
             and not download_url
@@ -192,6 +195,7 @@ def check_github_release(repo: str | None = None) -> dict[str, Any] | None:
             # New feature or addon executable in bin/
             if (
                 a_name.lower().endswith(".exe")
+                and not is_setup_installer
                 and a_name.lower() not in RETIRED_ASSETS
                 and canonical_name.lower()
                 not in ("noc tools.exe", "noc_tools.exe", "noc_tools_setup.exe")

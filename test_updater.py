@@ -72,6 +72,67 @@ class UpdaterGitHubTests(unittest.TestCase):
         self.assertIn("NOC_Tools.exe", info["download_url"])
 
     @patch("updater.requests.get")
+    def test_check_github_release_does_not_treat_setup_installer_as_module(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v1.0.6",
+            "name": "NOC Tools v1.0.6",
+            "assets": [
+                {
+                    "name": "NOC_Tools_Setup_v1.0.6.exe",
+                    "browser_download_url": "https://example.test/NOC_Tools_Setup_v1.0.6.exe",
+                    "size": 174659016,
+                }
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        info = check_github_release("robertositumeang/NOC_Tools")
+        self.assertEqual(info["tag_name"], "v1.0.6")
+        self.assertIsNone(info["asset_name"])
+        self.assertIsNone(info["download_url"])
+        self.assertFalse(info["has_update"])
+        self.assertEqual(info["modular_items"], [])
+        self.assertEqual(info["pending_modular"], [])
+
+    @patch("updater.requests.get")
+    def test_check_github_release_prefers_main_executable_over_setup_installer(
+        self, mock_get
+    ):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "tag_name": "v1.0.7",
+            "name": "NOC Tools v1.0.7",
+            "assets": [
+                {
+                    "name": "NOC Tools.exe",
+                    "browser_download_url": "https://example.test/NOC%20Tools.exe",
+                    "size": 63011084,
+                },
+                {
+                    "name": "NOC_Tools_Setup_v1.0.7.exe",
+                    "browser_download_url": "https://example.test/NOC_Tools_Setup_v1.0.7.exe",
+                    "size": 174653642,
+                },
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app_dir = Path(temp_dir)
+            (app_dir / "NOC Tools.exe").write_bytes(b"a" * 63011084)
+            with patch("updater.__file__", str(app_dir / "updater.py")):
+                with patch("updater.APP_VERSION", "1.0.6"):
+                    info = check_github_release("robertositumeang/NOC_Tools")
+
+        self.assertEqual(info["asset_name"], "NOC Tools.exe")
+        self.assertEqual(info["download_url"], "https://example.test/NOC%20Tools.exe")
+        self.assertEqual(info["pending_modular"], [])
+        self.assertTrue(info["has_update"])
+
+    @patch("updater.requests.get")
     def test_check_github_release_not_found(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 404

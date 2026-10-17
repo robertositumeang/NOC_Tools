@@ -727,6 +727,7 @@ input[type="file"] { display:none; }
       <div>
         <div class="modal-title">Tulis ke Google Sheets — Database TT</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;">Konfigurasi Google Apps Script untuk menulis data langsung ke spreadsheet</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Jika masih menulis jauh di bawah sitelist, perbarui kode Apps Script dan deploy sebagai versi baru.</div>
       </div>
       <button class="modal-close" onclick="closeSheetsModal()">✕</button>
     </div>
@@ -741,14 +742,15 @@ input[type="file"] { display:none; }
       JSON.stringify({ok:false,error:"Sheet 'Database TT' tidak ditemukan"}))
       .setMimeType(ContentService.MimeType.JSON);
 
-    var totalRows = sheet.getLastRow();
     var lastDataRow = 1;
+    var totalRows = sheet.getLastRow();
     if (totalRows > 1) {
-      var colCVals = sheet.getRange(2, 3, totalRows - 1, 1).getValues();
-      for (var i = 0; i < colCVals.length; i++) {
-        var cell = colCVals[i][0];
-        if (cell !== "" && cell !== null && typeof cell === "string" && cell.toString().indexOf("#") !== 0) {
+      var siteIds = sheet.getRange(2, 3, totalRows - 1, 1).getDisplayValues();
+      for (var i = siteIds.length - 1; i >= 0; i--) {
+        var siteId = siteIds[i][0].trim();
+        if (siteId !== "" && siteId.charAt(0) !== "#") {
           lastDataRow = i + 2;
+          break;
         }
       }
     }

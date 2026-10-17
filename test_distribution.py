@@ -117,6 +117,15 @@ def test_distribution_configuration_excludes_vpn_and_documents_target_requiremen
     assert "WebView2" in readme
 
 
+def test_release_version_matches_installer_filename() -> None:
+    from noc_brand import APP_VERSION
+
+    installer = (ROOT / "installer.iss").read_text(encoding="utf-8")
+
+    assert f'#define MyAppVersion "{APP_VERSION}"' in installer
+    assert f"OutputBaseFilename=NOC_Tools_Setup_v{APP_VERSION}" in installer
+
+
 def test_current_company_name_replaces_the_old_name_in_product_surfaces() -> None:
     files = (
         "build_exe.bat",
